@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { motion } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -8,56 +9,107 @@ import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { 
   BookOpen, 
-  Brain, 
   Trophy, 
   Clock, 
   Target,
-  TrendingUp,
-  Play,
   CheckCircle2,
-  AlertCircle,
-  BarChart3,
   Calendar,
-  Award,
   Activity,
   Home,
   Settings,
   LogOut,
   Menu,
   X,
-  Star,
-  Zap
+  Zap,
+  Play
 } from 'lucide-react'
 
 export default function Dashboard2() {
+  const supabase = createClientComponentClient()
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [loading, setLoading] = useState(true)
 
-  // Mock data
-  const studentData = {
-    name: 'Sarah Johnson',
-    totalTests: 24,
-    completedTests: 18,
-    averageScore: 85,
-    studyHours: 42,
-    currentStreak: 7,
-    recentTests: [
-      { id: 1, name: 'Reading Comprehension Test 1', score: 88, date: '2025-01-15', status: 'completed' },
-      { id: 2, name: 'Grammar Assessment', score: 79, date: '2025-01-14', status: 'completed' },
-      { id: 3, name: 'Vocabulary Quiz', score: 95, date: '2025-01-13', status: 'completed' },
-      { id: 4, name: 'Listening Practice', score: 82, date: '2025-01-12', status: 'completed' },
-    ],
-    upcomingTasks: [
-      { id: 1, name: 'Essay Submission', date: '2025-01-20', type: 'Assignment' },
-      { id: 2, name: 'Midterm Exam', date: '2025-01-25', type: 'Exam' },
-    ],
-    progress: {
-      reading: 75,
-      writing: 60,
-      speaking: 45,
-      listening: 90,
+  const [studentData, setStudentData] = useState({
+    name: '',
+    totalTests: 0,
+    completedTests: 0,
+    averageScore: 0,
+    studyHours: 0,
+    currentStreak: 0,
+    recentTests: [],
+    upcomingTasks: [],
+    progress: { reading: 0, writing: 0, speaking: 0, listening: 0 }
+  })
+
+  useEffect(() => {
+    init()
+  }, [])
+
+  const init = async () => {
+    try {
+      // 1. المستخدم
+      const { data: { user } } = await supabase.auth.getUser()
+      let name = 'طالب'
+      if (user) {
+        const { data: profile } = await supabase
+          .from('users')
+          .select('full_name')
+          .eq('id', user.id)
+          .single()
+        if (profile) name = profile.full_name
+      }
+
+      // 2. الاختبارات
+      const { data: tests } = await supabase
+        .from('tests')
+        .select('id, title, description, created_at')
+
+      // 3. المحاولات الأخيرة
+      const { data: attempts } = await supabase
+        .from('test_attempts')
+        .select('id, test_id, completed_at')
+        .order('completed_at', { ascending: false })
+        .limit(4)
+
+      // 4. النتائج
+      const { data: results } = await supabase
+        .from('user_results')
+        .select('attempt_id, score, percentage')
+
+      // ربط المحاولات بالاختبارات
+      const recentTests = attempts?.map(a => {
+        const test = tests?.find(t => t.id === a.test_id)
+        const result = results?.find(r => r.attempt_id === a.id)
+        return {
+          id: a.id,
+          name: test?.title || 'اختبار',
+          score: result?.percentage || 0,
+          date: a.completed_at?.split('T')[0],
+          status: 'completed'
+        }
+      }) || []
+
+      setStudentData({
+        name,
+        totalTests: tests?.length || 0,
+        completedTests: recentTests.length,
+        averageScore: results?.length ? Math.round(results.reduce((s, r) => s + r.percentage, 0) / results.length) : 0,
+        studyHours: 0, // تحتاج منطق إضافي
+        currentStreak: 0, // تحتاج منطق إضافي
+        recentTests,
+        upcomingTasks: [], // تحتاج جدول tasks لو تبغى
+        progress: { reading: 0, writing: 0, speaking: 0, listening: 0 } // ممكن تحسبها من user_results
+      })
+    } catch (err) {
+      console.error('Error loading dashboard:', err)
+    } finally {
+      setLoading(false)
     }
   }
 
+  if (loading) return <div className="text-white p-10">جاري التحميل...</div>
+
+  // ---------------- Sidebar ----------------
   const Sidebar = () => (
     <motion.div
       initial={{ x: -250 }}
@@ -98,10 +150,11 @@ export default function Dashboard2() {
     </a>
   )
 
+  // ---------------- Main Content ----------------
   const MainContent = () => (
     <div className={`flex-grow p-8 transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-0'}`}>
       <header className="flex justify-between items-center mb-8">
-        <h2 className="text-3xl font-bold text-white">Welcome back, {studentData.name}</h2>
+        <h2 className="text-3xl font-bold text-white">مرحباً، {studentData.name}</h2>
         <Button onClick={() => setSidebarOpen(true)} variant="ghost" size="icon" className="text-white hover:bg-[#2a2a2a] md:hidden">
           <Menu className="h-6 w-6" />
         </Button>
@@ -109,130 +162,31 @@ export default function Dashboard2() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <StatCard icon={Trophy} title="Average Score" value={`${studentData.averageScore}%`} color="text-green-400" />
-        <StatCard icon={Clock} title="Study Hours" value={`${studentData.studyHours}`} color="text-blue-400" />
-        <StatCard icon={CheckCircle2} title="Tests Completed" value={`${studentData.completedTests}/${studentData.totalTests}`} color="text-yellow-400" />
-        <StatCard icon={Zap} title="Current Streak" value={`${studentData.currentStreak} Days`} color="text-red-400" />
+        <StatCard icon={Trophy} title="متوسط الدرجات" value={`${studentData.averageScore}%`} color="text-green-400" />
+        <StatCard icon={Clock} title="ساعات المذاكرة" value={`${studentData.studyHours}`} color="text-blue-400" />
+        <StatCard icon={CheckCircle2} title="اختبارات مكتملة" value={`${studentData.completedTests}/${studentData.totalTests}`} color="text-yellow-400" />
+        <StatCard icon={Zap} title="سلسلة الإنجاز" value={`${studentData.currentStreak} أيام`} color="text-red-400" />
       </div>
 
-      {/* Main Tabs */}
+      {/* Tabs */}
       <Tabs defaultValue="overview" className="w-full">
         <TabsList className="bg-[#2a2a2a] text-white">
-          <TabsTrigger value="overview" className="data-[state=active]:bg-primary-gh data-[state=active]:text-white">Overview</TabsTrigger>
-          <TabsTrigger value="progress" className="data-[state=active]:bg-primary-gh data-[state=active]:text-white">Detailed Progress</TabsTrigger>
-          <TabsTrigger value="tasks" className="data-[state=active]:bg-primary-gh data-[state=active]:text-white">Tasks & Exams</TabsTrigger>
+          <TabsTrigger value="overview" className="data-[state=active]:bg-primary-gh data-[state=active]:text-white">النظرة العامة</TabsTrigger>
+          <TabsTrigger value="progress" className="data-[state=active]:bg-primary-gh data-[state=active]:text-white">التقدم</TabsTrigger>
+          <TabsTrigger value="tasks" className="data-[state=active]:bg-primary-gh data-[state=active]:text-white">المهام</TabsTrigger>
         </TabsList>
         
         <TabsContent value="overview" className="mt-4">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <Card className="lg:col-span-2 bg-[#1a1a1a] border-[#2a2a2a] text-white">
-              <CardHeader>
-                <CardTitle>Recent Activity</CardTitle>
-                <CardDescription className="text-gray-400">Your last 4 completed tests.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-4">
-                  {studentData.recentTests.map(test => (
-                    <li key={test.id} className="flex justify-between items-center border-b border-[#2a2a2a] pb-2 last:border-b-0">
-                      <div className="flex items-center">
-                        <Play className="h-5 w-5 text-primary-gh mr-3" />
-                        <div>
-                          <p className="font-medium">{test.name}</p>
-                          <p className="text-sm text-gray-400">{test.date}</p>
-                        </div>
-                      </div>
-                      <span className={`font-bold ${test.score >= 80 ? 'text-green-400' : 'text-yellow-400'}`}>{test.score}%</span>
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-[#1a1a1a] border-[#2a2a2a] text-white">
-              <CardHeader>
-                <CardTitle>Upcoming Tasks</CardTitle>
-                <CardDescription className="text-gray-400">Assignments and exams due soon.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-4">
-                  {studentData.upcomingTasks.map(task => (
-                    <li key={task.id} className="flex justify-between items-center border-b border-[#2a2a2a] pb-2 last:border-b-0">
-                      <div className="flex items-center">
-                        <Calendar className="h-5 w-5 text-blue-400 mr-3" />
-                        <div>
-                          <p className="font-medium">{task.name}</p>
-                          <p className="text-sm text-gray-400">{task.date}</p>
-                        </div>
-                      </div>
-                      <span className="text-sm font-semibold bg-[#2a2a2a] px-2 py-1 rounded-full text-gray-300">{task.type}</span>
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="progress" className="mt-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <ProgressCard title="Reading Skills" progress={studentData.progress.reading} />
-            <ProgressCard title="Writing Skills" progress={studentData.progress.writing} />
-            <ProgressCard title="Speaking Skills" progress={studentData.progress.speaking} />
-            <ProgressCard title="Listening Skills" progress={studentData.progress.listening} />
-          </div>
-        </TabsContent>
-
-        <TabsContent value="tasks" className="mt-4">
           <Card className="bg-[#1a1a1a] border-[#2a2a2a] text-white">
             <CardHeader>
-              <CardTitle>All Tasks and Exams</CardTitle>
-              <CardDescription className="text-gray-400">A comprehensive list of all your academic commitments.</CardDescription>
+              <CardTitle>آخر النشاطات</CardTitle>
+              <CardDescription className="text-gray-400">آخر 4 اختبارات مكتملة</CardDescription>
             </CardHeader>
             <CardContent>
-              <p className="text-gray-500">
-                (This section would typically contain a detailed table or list of all tasks, assignments, and exams with filters and sorting options.)
-              </p>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-    </div>
-  )
-
-  const StatCard = ({ icon: Icon, title, value, color }) => (
-    <Card className="bg-[#1a1a1a] border-[#2a2a2a] text-white">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-gray-400">{title}</CardTitle>
-        <Icon className={`h-5 w-5 ${color}`} />
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
-        <p className="text-xs text-gray-500 mt-1">Based on last 30 days</p>
-      </CardContent>
-    </Card>
-  )
-
-  const ProgressCard = ({ title, progress }) => (
-    <Card className="bg-[#1a1a1a] border-[#2a2a2a] text-white">
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="flex items-center space-x-4">
-          <Progress value={progress} className="w-full h-3 bg-[#2a2a2a]" indicatorClassName="bg-primary-gh" />
-          <span className="text-sm font-medium">{progress}%</span>
-        </div>
-        <p className="text-xs text-gray-500 mt-2">
-          {progress < 50 ? 'Needs improvement' : progress < 80 ? 'Good progress' : 'Excellent!'}
-        </p>
-      </CardContent>
-    </Card>
-  )
-
-  return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white flex">
-      <Sidebar />
-      <MainContent />
-    </div>
-  )
-}
+              <ul className="space-y-4">
+                {studentData.recentTests.map(test => (
+                  <li key={test.id} className="flex justify-between items-center border-b border-[#2a2a2a] pb-2 last:border-b-0">
+                    <div className="flex items-center">
+                      <Play className="h-5 w-5 text-primary-gh mr-3" />
+                      <div>
+                        <p className="font-medium">{test.name}</p>
