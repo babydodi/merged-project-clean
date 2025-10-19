@@ -42,187 +42,551 @@ export default function Landing2() {
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
+            transition={{ delay: 0.2 }}
             className="text-2xl font-bold text-white"
           >
-            Project Name
+            STEP English
           </motion.div>
-          <div className="flex space-x-6 items-center">
-            {/* Navigation Links */}
-            <a href="#features" className="text-gray-300 hover:text-white transition duration-300">Features</a>
-            <a href="#pricing" className="text-gray-300 hover:text-white transition duration-300">Pricing</a>
-            <a href="#contact" className="text-gray-300 hover:text-white transition duration-300">Contact</a>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3 }}
+          >
             <Button 
               onClick={() => setIsSignUpOpen(true)}
-              className="bg-primary-gh hover:bg-primary-gh/90 text-white font-bold py-2 px-4 rounded-full transition duration-300 shadow-lg hover:shadow-primary-gh/50"
+              className="bg-white text-black hover:bg-gray-200 transition-colors"
             >
               Get Started
             </Button>
-          </div>
+          </motion.div>
         </div>
       </motion.nav>
 
       {/* Hero Section */}
-      <motion.header 
+      <motion.section 
         style={{ opacity, scale }}
-        className="pt-32 pb-20 text-center relative z-10"
+        className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20"
       >
-        <div className="container mx-auto px-6">
-          <h1 className="text-6xl font-extrabold text-white mb-6 leading-tight">
-            The <span className="text-primary-gh">Future</span> of Learning is Here
-          </h1>
-          <p className="text-xl text-gray-400 mb-10 max-w-3xl mx-auto">
-            Unlock your potential with our AI-powered platform. Personalized paths, expert insights, and a community to support your growth.
-          </p>
-          <Button 
-            onClick={() => setIsSignUpOpen(true)}
-            className="bg-primary-gh hover:bg-primary-gh/90 text-white font-bold py-3 px-8 text-lg rounded-full transition duration-300 shadow-xl hover:shadow-primary-gh/50 transform hover:scale-105"
-          >
-            Start Your Free Trial <ArrowRight className="ml-2 h-5 w-5" />
-          </Button>
+        {/* Animated background grid */}
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute inset-0" style={{
+            backgroundImage: `
+              linear-gradient(to right, #1a1a1a 1px, transparent 1px),
+              linear-gradient(to bottom, #1a1a1a 1px, transparent 1px)
+            `,
+            backgroundSize: '80px 80px'
+          }} />
         </div>
-      </motion.header>
 
-      {/* Main Content (Features, Pricing, etc.) */}
-      <div className="relative z-20 bg-[#0a0a0a]">
-        {/* Features Section */}
-        <section id="features" className="py-20">
-          <div className="container mx-auto px-6">
-            <h2 className="text-4xl font-bold text-center text-white mb-16">
-              Features Designed for <span className="text-secondary-gh">Success</span>
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
-              <FeatureCard 
-                icon={Brain} 
-                title="AI-Powered Personalization" 
-                description="Our intelligent engine adapts to your learning style, ensuring maximum retention and efficiency."
-              />
-              <FeatureCard 
-                icon={Trophy} 
-                title="Gamified Learning Paths" 
-                description="Stay motivated with challenges, badges, and leaderboards. Make learning an exciting journey."
-              />
-              <FeatureCard 
-                icon={BookOpen} 
-                title="Vast Content Library" 
-                description="Access thousands of courses, articles, and resources curated by industry experts."
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* Pricing Section */}
-        <section id="pricing" className="py-20 bg-[#121212]">
-          <div className="container mx-auto px-6">
-            <h2 className="text-4xl font-bold text-center text-white mb-16">
-              Simple, Transparent <span className="text-primary-gh">Pricing</span>
-            </h2>
-            <div className="flex flex-col md:flex-row justify-center space-y-8 md:space-y-0 md:space-x-8">
-              <PricingCard 
-                plan="Basic"
-                price="$9"
-                features={['Access to core courses', 'Community support', 'Monthly progress reports']}
-                isFeatured={false}
-                onSelect={() => { setFormData(prev => ({ ...prev, plan: 'basic' })); setIsSignUpOpen(true); }}
-              />
-              <PricingCard 
-                plan="Pro"
-                price="$29"
-                features={['All Basic features', 'Advanced AI insights', '1:1 Expert sessions', 'Priority support']}
-                isFeatured={true}
-                onSelect={() => { setFormData(prev => ({ ...prev, plan: 'pro' })); setIsSignUpOpen(true); }}
-              />
-              <PricingCard 
-                plan="Enterprise"
-                price="Custom"
-                features={['All Pro features', 'Dedicated account manager', 'Custom integrations', 'Team analytics dashboard']}
-                isFeatured={false}
-                onSelect={() => { setFormData(prev => ({ ...prev, plan: 'enterprise' })); setIsSignUpOpen(true); }}
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* Contact Section */}
-        <section id="contact" className="py-20">
-          <div className="container mx-auto px-6 text-center">
-            <h2 className="text-4xl font-bold text-white mb-4">
-              Ready to <span className="text-secondary-gh">Transform</span> Your Future?
-            </h2>
-            <p className="text-xl text-gray-400 mb-8">
-              Join thousands of learners who are already ahead of the curve.
-            </p>
-            <Button 
-              onClick={() => setIsSignUpOpen(true)}
-              className="bg-primary-gh hover:bg-primary-gh/90 text-white font-bold py-3 px-8 text-lg rounded-full transition duration-300 shadow-xl hover:shadow-primary-gh/50 transform hover:scale-105"
+        <div className="container mx-auto px-6 relative z-10">
+          <div className="max-w-4xl mx-auto text-center">
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.2 }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#1a1a1a] border border-[#2a2a2a] mb-6"
             >
-              Get Started Now
-            </Button>
-          </div>
-        </section>
+              <Star className="w-4 h-4 text-white" />
+              <span className="text-sm text-gray-400">Professional Test Preparation</span>
+            </motion.div>
 
-        {/* Footer */}
-        <footer className="py-10 border-t border-[#2a2a2a]">
-          <div className="container mx-auto px-6 text-center text-gray-500">
-            <p>&copy; {new Date().getFullYear()} Project Name. All rights reserved.</p>
-            <div className="flex justify-center space-x-6 mt-4">
-              <a href="#" className="hover:text-white transition duration-300">Privacy Policy</a>
-              <a href="#" className="hover:text-white transition duration-300">Terms of Service</a>
-            </div>
+            <motion.h1
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.4 }}
+              className="text-5xl md:text-7xl font-bold mb-6 leading-tight"
+            >
+              <span className="text-white">Master the </span>
+              <span className="text-white border-b-4 border-white pb-2">
+                STEP English Test
+              </span>
+            </motion.h1>
+
+            <motion.p
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.6 }}
+              className="text-xl text-gray-400 mb-10 max-w-2xl mx-auto leading-relaxed"
+            >
+              Experience a real test simulator with detailed explanations for every question. 
+              Prepare with confidence and achieve your target score.
+            </motion.p>
+
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.8 }}
+              className="flex gap-4 justify-center flex-wrap"
+            >
+              <Button 
+                size="lg"
+                onClick={() => setIsSignUpOpen(true)}
+                className="bg-white text-black hover:bg-gray-200 transition-all transform hover:scale-105 text-lg px-8 py-6"
+              >
+                Start Your Journey
+                <ArrowRight className="ml-2 w-5 h-5" />
+              </Button>
+              <Button 
+                size="lg"
+                variant="outline"
+                className="border-[#2a2a2a] text-white hover:bg-[#1a1a1a] text-lg px-8 py-6"
+                onClick={() => document.getElementById('pricing').scrollIntoView({ behavior: 'smooth' })}
+              >
+                View Pricing
+              </Button>
+            </motion.div>
           </div>
-        </footer>
-      </div>
+        </div>
+
+        {/* Scroll indicator */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 1.5, duration: 1 }}
+          className="absolute bottom-10 left-1/2 transform -translate-x-1/2"
+        >
+          <motion.div
+            animate={{ y: [0, 10, 0] }}
+            transition={{ duration: 2, repeat: Infinity }}
+            className="w-6 h-10 border-2 border-[#2a2a2a] rounded-full flex justify-center pt-2"
+          >
+            <motion.div 
+              className="w-1.5 h-1.5 bg-white rounded-full"
+              animate={{ opacity: [1, 0.3, 1] }}
+              transition={{ duration: 2, repeat: Infinity }}
+            />
+          </motion.div>
+        </motion.div>
+      </motion.section>
+
+      {/* Features Section */}
+      <section className="py-32 relative border-t border-[#1a1a1a]">
+        <div className="container mx-auto px-6">
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8 }}
+            viewport={{ once: true }}
+            className="text-center mb-20"
+          >
+            <h2 className="text-4xl md:text-5xl font-bold text-white mb-6">
+              Why Choose Our Platform?
+            </h2>
+            <p className="text-xl text-gray-400 max-w-2xl mx-auto">
+              Experience the most comprehensive STEP test preparation
+            </p>
+          </motion.div>
+
+          <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
+            {[
+              {
+                icon: BookOpen,
+                title: 'Real Test Simulator',
+                description: 'Practice with authentic test conditions and interface that mirrors the actual STEP exam',
+                delay: 0.2
+              },
+              {
+                icon: Brain,
+                title: 'Detailed Explanations',
+                description: 'Understand every question with comprehensive explanations that help you learn from mistakes',
+                delay: 0.4
+              },
+              {
+                icon: Trophy,
+                title: 'Track Your Progress',
+                description: 'Monitor your improvement with detailed analytics and personalized performance insights',
+                delay: 0.6
+              }
+            ].map((feature, index) => (
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, y: 50 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: feature.delay }}
+                viewport={{ once: true }}
+                whileHover={{ 
+                  y: -10,
+                  transition: { duration: 0.3 }
+                }}
+              >
+                <Card className="bg-[#141414] border-[#2a2a2a] hover:border-white transition-all duration-300 h-full">
+                  <CardHeader>
+                    <motion.div
+                      whileHover={{ rotate: 360, scale: 1.1 }}
+                      transition={{ duration: 0.6 }}
+                      className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mb-4"
+                    >
+                      <feature.icon className="w-8 h-8 text-black" />
+                    </motion.div>
+                    <CardTitle className="text-2xl text-white">{feature.title}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <CardDescription className="text-gray-400 text-base leading-relaxed">
+                      {feature.description}
+                    </CardDescription>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Benefits Section */}
+      <section className="py-32 border-t border-[#1a1a1a]">
+        <div className="container mx-auto px-6">
+          <div className="max-w-6xl mx-auto">
+            <motion.div
+              initial={{ opacity: 0, x: -50 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.8 }}
+              viewport={{ once: true }}
+              className="grid md:grid-cols-2 gap-16 items-center"
+            >
+              <div>
+                <h2 className="text-4xl md:text-5xl font-bold text-white mb-6">
+                  Everything You Need to Succeed
+                </h2>
+                <p className="text-lg text-gray-400 mb-8">
+                  Our platform provides comprehensive tools and resources designed to maximize your STEP test performance.
+                </p>
+                
+                <div className="space-y-6">
+                  {[
+                    { icon: Target, text: 'Accurate test simulation matching real exam conditions' },
+                    { icon: Brain, text: 'Step-by-step explanations for every answer' },
+                    { icon: Clock, text: 'Timed practice to improve speed and accuracy' },
+                    { icon: Trophy, text: 'Performance tracking and progress analytics' }
+                  ].map((item, index) => (
+                    <motion.div
+                      key={index}
+                      initial={{ opacity: 0, x: -30 }}
+                      whileInView={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.5, delay: index * 0.1 }}
+                      viewport={{ once: true }}
+                      className="flex items-start gap-4"
+                    >
+                      <div className="flex-shrink-0 w-12 h-12 bg-white rounded-xl flex items-center justify-center">
+                        <item.icon className="w-6 h-6 text-black" />
+                      </div>
+                      <p className="text-gray-400 text-lg pt-2">{item.text}</p>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                whileInView={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.8 }}
+                viewport={{ once: true }}
+                className="relative"
+              >
+                <div className="relative bg-[#141414] rounded-3xl p-8 border border-[#2a2a2a]">
+                  <div className="space-y-4">
+                    {[1, 2, 3].map((item, index) => (
+                      <motion.div
+                        key={item}
+                        initial={{ opacity: 0, x: 50 }}
+                        whileInView={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.5, delay: 0.2 + index * 0.1 }}
+                        viewport={{ once: true }}
+                        className="bg-[#0a0a0a] rounded-xl p-6 border border-[#2a2a2a]"
+                      >
+                        <div className="flex items-center gap-4 mb-3">
+                          <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center text-black font-bold">
+                            {item}
+                          </div>
+                          <div className="flex-1 h-2 bg-[#1a1a1a] rounded-full overflow-hidden">
+                            <motion.div
+                              initial={{ width: 0 }}
+                              whileInView={{ width: `${60 + item * 10}%` }}
+                              transition={{ duration: 1, delay: 0.5 + index * 0.1 }}
+                              viewport={{ once: true }}
+                              className="h-full bg-white"
+                            />
+                          </div>
+                        </div>
+                        <div className="h-2 bg-[#1a1a1a] rounded-full mb-2" />
+                        <div className="h-2 bg-[#1a1a1a] rounded-full w-3/4" />
+                      </motion.div>
+                    ))}
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
+      {/* Pricing Section */}
+      <section id="pricing" className="py-32 border-t border-[#1a1a1a]">
+        <div className="container mx-auto px-6">
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8 }}
+            viewport={{ once: true }}
+            className="text-center mb-20"
+          >
+            <h2 className="text-4xl md:text-5xl font-bold text-white mb-6">
+              Choose Your Plan
+            </h2>
+            <p className="text-xl text-gray-400 max-w-2xl mx-auto">
+              Select the perfect plan for your STEP test preparation journey
+            </p>
+          </motion.div>
+
+          <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+            {[
+              {
+                name: 'Basic',
+                price: 75,
+                description: 'Essential tools for STEP preparation',
+                features: [
+                  'Real test simulator access',
+                  'Basic explanations for answers',
+                  'Progress tracking',
+                  'Standard support'
+                ],
+                popular: false,
+                delay: 0.2
+              },
+              {
+                name: 'Premium',
+                price: 85,
+                description: 'Complete preparation package',
+                features: [
+                  'Full test simulator access',
+                  'Detailed explanations for every question',
+                  'Advanced analytics & insights',
+                  'Priority support',
+                  'Personalized study plan',
+                  'Unlimited practice tests'
+                ],
+                popular: true,
+                delay: 0.4
+              }
+            ].map((plan) => (
+              <motion.div
+                key={plan.name}
+                initial={{ opacity: 0, y: 50 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: plan.delay }}
+                viewport={{ once: true }}
+                whileHover={{ 
+                  scale: 1.05,
+                  transition: { duration: 0.3 }
+                }}
+              >
+                <Card className={`relative overflow-hidden h-full ${ 
+                  plan.popular 
+                    ? 'bg-white border-white' 
+                    : 'bg-[#141414] border-[#2a2a2a]'
+                }`}>
+                  {plan.popular && (
+                    <div className="absolute top-0 right-0">
+                      <div className="bg-black text-white px-4 py-1 text-sm font-semibold">
+                        MOST POPULAR
+                      </div>
+                    </div>
+                  )}
+                  
+                  <CardHeader className="pt-8">
+                    <CardTitle className={`text-3xl ${plan.popular ? 'text-black' : 'text-white'}`}>
+                      {plan.name}
+                    </CardTitle>
+                    <CardDescription className={plan.popular ? 'text-gray-600' : 'text-gray-400'}>
+                      {plan.description}
+                    </CardDescription>
+                    <div className="mt-6">
+                      <span className={`text-5xl font-bold ${plan.popular ? 'text-black' : 'text-white'}`}>
+                        ${plan.price}
+                      </span>
+                      <span className={`ml-2 ${plan.popular ? 'text-gray-600' : 'text-gray-400'}`}>
+                        / lifetime
+                      </span>
+                    </div>
+                  </CardHeader>
+                  
+                  <CardContent className="pt-6">
+                    <ul className="space-y-4">
+                      {plan.features.map((feature, index) => (
+                        <motion.li
+                          key={index}
+                          initial={{ opacity: 0, x: -20 }}
+                          whileInView={{ opacity: 1, x: 0 }}
+                          transition={{ duration: 0.4, delay: plan.delay + 0.1 * index }}
+                          viewport={{ once: true }}
+                          className="flex items-start gap-3"
+                        >
+                          <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center mt-0.5 ${
+                            plan.popular ? 'bg-black' : 'bg-white'
+                          }`}>
+                            <Check className={`w-4 h-4 ${plan.popular ? 'text-white' : 'text-black'}`} />
+                          </div>
+                          <span className={plan.popular ? 'text-gray-700' : 'text-gray-400'}>
+                            {feature}
+                          </span>
+                        </motion.li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                  
+                  <CardFooter className="pt-6">
+                    <Button 
+                      className={`w-full transition-all transform hover:scale-105 ${
+                        plan.popular
+                          ? 'bg-black text-white hover:bg-gray-900'
+                          : 'bg-white text-black hover:bg-gray-200'
+                      }`}
+                      size="lg"
+                      onClick={() => {
+                        setFormData({ ...formData, plan: plan.name.toLowerCase() })
+                        setIsSignUpOpen(true)
+                      }}
+                    >
+                      Get Started
+                      <ArrowRight className="ml-2 w-5 h-5" />
+                    </Button>
+                  </CardFooter>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* CTA Section */}
+      <section className="py-32 border-t border-[#1a1a1a]">
+        <div className="container mx-auto px-6">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            whileInView={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.8 }}
+            viewport={{ once: true }}
+            className="max-w-4xl mx-auto bg-white rounded-3xl p-12 md:p-16 text-center relative overflow-hidden"
+          >
+            <div className="relative z-10">
+              <motion.h2
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.2 }}
+                viewport={{ once: true }}
+                className="text-4xl md:text-5xl font-bold text-black mb-6"
+              >
+                Ready to Ace Your STEP Test?
+              </motion.h2>
+              
+              <motion.p
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.3 }}
+                viewport={{ once: true }}
+                className="text-xl text-gray-700 mb-10 max-w-2xl mx-auto"
+              >
+                Join hundreds of students who have improved their scores with our comprehensive preparation platform
+              </motion.p>
+              
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.4 }}
+                viewport={{ once: true }}
+              >
+                <Button 
+                  size="lg"
+                  onClick={() => setIsSignUpOpen(true)}
+                  className="bg-black text-white hover:bg-gray-900 transition-all transform hover:scale-105 text-lg px-10 py-6"
+                >
+                  Start Preparing Today
+                  <Zap className="ml-2 w-5 h-5" />
+                </Button>
+              </motion.div>
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="border-t border-[#1a1a1a] py-12">
+        <div className="container mx-auto px-6">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-white mb-4">
+              STEP English
+            </div>
+            <p className="text-gray-400">
+              © 2025 STEP English Test Platform. All rights reserved.
+            </p>
+          </div>
+        </div>
+      </footer>
 
       {/* Sign Up Dialog */}
       <Dialog open={isSignUpOpen} onOpenChange={setIsSignUpOpen}>
-        <DialogContent className="sm:max-w-[425px] bg-[#1a1a1a] border-[#2a2a2a] text-white">
+        <DialogContent className="bg-[#141414] border-[#2a2a2a] text-white">
           <DialogHeader>
-            <DialogTitle className="text-white">Sign Up for {formData.plan} Plan</DialogTitle>
+            <DialogTitle className="text-2xl text-white">Start Your Journey</DialogTitle>
             <DialogDescription className="text-gray-400">
-              Enter your details below to get started with the {formData.plan} plan.
+              Sign up now and begin your STEP test preparation
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="name" className="text-right text-gray-300">
-                Name
-              </Label>
+          
+          <form onSubmit={handleSubmit} className="space-y-6 mt-4">
+            <div className="space-y-2">
+              <Label htmlFor="name" className="text-white">Full Name</Label>
               <Input
                 id="name"
+                placeholder="Enter your name"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="col-span-3 bg-[#2a2a2a] border-[#3a3a3a] text-white"
                 required
+                className="bg-[#0a0a0a] border-[#2a2a2a] text-white focus:border-white"
               />
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="email" className="text-right text-gray-300">
-                Email
-              </Label>
+            
+            <div className="space-y-2">
+              <Label htmlFor="email" className="text-white">Email Address</Label>
               <Input
                 id="email"
                 type="email"
+                placeholder="Enter your email"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="col-span-3 bg-[#2a2a2a] border-[#3a3a3a] text-white"
                 required
+                className="bg-[#0a0a0a] border-[#2a2a2a] text-white focus:border-white"
               />
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="plan" className="text-right text-gray-300">
-                Plan
-              </Label>
-              <Input
-                id="plan"
-                value={formData.plan}
-                className="col-span-3 bg-[#2a2a2a] border-[#3a3a3a] text-white cursor-not-allowed"
-                readOnly
-              />
+            
+            <div className="space-y-2">
+              <Label className="text-white">Selected Plan</Label>
+              <div className="flex gap-4">
+                {['basic', 'premium'].map((planType) => (
+                  <button
+                    key={planType}
+                    type="button"
+                    onClick={() => setFormData({ ...formData, plan: planType })}
+                    className={`flex-1 p-4 rounded-lg border-2 transition-all ${
+                      formData.plan === planType
+                        ? 'border-white bg-white/10'
+                        : 'border-[#2a2a2a] hover:border-[#3a3a3a]'
+                    }`}
+                  >
+                    <div className="font-semibold text-white capitalize">{planType}</div>
+                    <div className="text-2xl font-bold text-white">
+                      ${planType === 'basic' ? '75' : '85'}
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
+            
             <Button 
-              type="submit" 
-              className="w-full bg-primary-gh hover:bg-primary-gh/90 text-white font-bold py-2 rounded-lg transition duration-300 mt-4"
+              type="submit"
+              className="w-full bg-white text-black hover:bg-gray-200 transition-colors"
+              size="lg"
             >
-              Sign Up
+              Complete Sign Up
             </Button>
           </form>
         </DialogContent>
@@ -230,51 +594,3 @@ export default function Landing2() {
     </div>
   )
 }
-
-const FeatureCard = ({ icon: Icon, title, description }) => (
-  <Card className="bg-[#1a1a1a] border-[#2a2a2a] text-white shadow-xl hover:shadow-2xl transition duration-500 transform hover:scale-[1.02]">
-    <CardHeader className="flex flex-row items-center space-x-4">
-      <div className="p-3 rounded-full bg-primary-gh/20 text-primary-gh">
-        <Icon className="h-6 w-6" />
-      </div>
-      <CardTitle className="text-xl font-bold text-white">{title}</CardTitle>
-    </CardHeader>
-    <CardContent>
-      <CardDescription className="text-gray-400">
-        {description}
-      </CardDescription>
-    </CardContent>
-  </Card>
-)
-
-const PricingCard = ({ plan, price, features, isFeatured, onSelect }) => (
-  <Card className={`w-full max-w-sm ${isFeatured ? 'bg-[#1a1a1a] border-primary-gh shadow-2xl scale-105' : 'bg-[#121212] border-[#2a2a2a]'} text-white transition duration-500 hover:shadow-primary-gh/50`}>
-    <CardHeader className="text-center">
-      <CardTitle className={`text-3xl font-bold ${isFeatured ? 'text-primary-gh' : 'text-white'}`}>{plan}</CardTitle>
-      <CardDescription className="text-gray-400 mt-2">
-        {plan === 'Enterprise' ? 'Contact us for a custom quote' : 'Billed monthly'}
-      </CardDescription>
-    </CardHeader>
-    <CardContent className="text-center">
-      <p className="text-5xl font-extrabold text-white mb-6">
-        {price === 'Custom' ? price : `${price}/mo`}
-      </p>
-      <ul className="space-y-3 text-gray-300 text-left">
-        {features.map((feature, index) => (
-          <li key={index} className="flex items-center">
-            <Check className="h-5 w-5 text-primary-gh mr-3" />
-            {feature}
-          </li>
-        ))}
-      </ul>
-    </CardContent>
-    <CardFooter className="pt-6">
-      <Button 
-        onClick={onSelect}
-        className={`w-full font-bold py-2 rounded-lg transition duration-300 ${isFeatured ? 'bg-primary-gh hover:bg-primary-gh/90 text-white shadow-lg' : 'bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white'}`}
-      >
-        {plan === 'Enterprise' ? 'Contact Sales' : 'Choose Plan'}
-      </Button>
-    </CardFooter>
-  </Card>
-)
