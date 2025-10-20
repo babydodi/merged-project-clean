@@ -45,7 +45,7 @@ export default function Landing2() {
             transition={{ delay: 0.2 }}
             className="text-2xl font-bold text-white"
           >
-            STEP English
+            STEP Online
           </motion.div>
           <motion.div
             initial={{ opacity: 0 }}
