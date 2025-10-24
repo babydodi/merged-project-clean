@@ -31,23 +31,39 @@ import {
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
+// ✅ تعريف نوع بيانات الطالب
+type StudentData = {
+  name: string
+  totalTests: number
+  completedTests: number
+  averageScore: number
+  studyHours: number
+  currentStreak: number
+  recentTests: { id: string; name: string; score: number; date: string }[]
+  upcomingTasks: { id: string; name: string; date: string; type: string }[]
+  progress: { reading: number; writing: number; speaking: number; listening: number }
+  tests: { id: string; title: string; description: string | null }[]
+}
+
 export default function Dashboard2() {
   const supabase = createClientComponentClient()
   const router = useRouter()
 
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [loading, setLoading] = useState(true)
-  const [studentData, setStudentData] = useState({
+
+  // ✅ استخدام النوع الجديد هنا
+  const [studentData, setStudentData] = useState<StudentData>({
     name: '',
     totalTests: 0,
     completedTests: 0,
     averageScore: 0,
     studyHours: 0,
     currentStreak: 0,
-    recentTests: [] as { id: string; name: string; score: number; date: string }[],
-    upcomingTasks: [] as { id: string; name: string; date: string; type: string }[],
+    recentTests: [],
+    upcomingTasks: [],
     progress: { reading: 0, writing: 0, speaking: 0, listening: 0 },
-    tests: [] as { id: string; title: string; description: string | null }[],
+    tests: [],
   })
 
   useEffect(() => {
@@ -56,48 +72,43 @@ export default function Dashboard2() {
 
   async function init() {
     try {
-      // 1) احصل على المستخدم
       const { data: authData } = await supabase.auth.getUser()
       const user = authData?.user || null
 
-      // 2) جلب الاسم والدور من جدول users
       let name = 'طالب'
       let role: 'admin' | 'subscriber' | 'unsubscribed' = 'unsubscribed'
+
       if (user) {
         const { data: profile } = await supabase
           .from('users')
           .select('full_name, role')
           .eq('id', user.id)
           .single()
+
         if (profile?.full_name) name = profile.full_name
         if (profile?.role) role = profile.role as typeof role
       }
 
-      // 3) جلب الاختبارات بحسب الدور والإتاحة
       let query = supabase
         .from('tests')
         .select('id, title, description, availability, is_published, created_at')
         .order('created_at', { ascending: false })
 
-      // الأدمن يشوف الكل، غيره يشوف المنشور فقط
-      if (role !== 'admin') {
-        query = query.eq('is_published', true)
-      }
+      if (role !== 'admin') query = query.eq('is_published', true)
 
       if (role === 'admin') {
-        // لا قيود إضافية
+        // لا شيء إضافي
       } else if (role === 'subscriber') {
         query = query.in('availability', ['all', 'subscribers'])
       } else {
-        // مستخدم غير مشترك
         query = query.eq('availability', 'all')
       }
 
       const { data: tests } = await query
 
-      // 4) جلب المحاولات والنتائج للمستخدم
       let attempts: { id: string; test_id: string; started_at: string; completed_at: string | null }[] = []
       let results: { attempt_id: string; percentage: number }[] = []
+
       if (user) {
         const { data: userAttempts } = await supabase
           .from('test_attempts')
@@ -113,7 +124,6 @@ export default function Dashboard2() {
         results = userResults || []
       }
 
-      // 5) ربط آخر 4 محاولات مكتملة مع بيانات الاختبارات
       const recentCompleted = attempts.filter(a => a.completed_at).slice(0, 4)
       const recentTests = recentCompleted.map(a => {
         const t = tests?.find(x => x.id === a.test_id)
@@ -126,7 +136,6 @@ export default function Dashboard2() {
         }
       })
 
-      // 6) حساب متوسط الدرجات
       const averageScore = results.length
         ? Math.round(
             results.reduce((sum, r) => sum + Number(r.percentage || 0), 0) /
@@ -134,10 +143,8 @@ export default function Dashboard2() {
           )
         : 0
 
-      // 7) سلسلة الإنجاز
       const currentStreak = computeCurrentStreak(attempts)
 
-      // 8) تقدّم المهارات (تقدير بسيط من النتائج)
       const progress = {
         reading: estimateSkillProgress(results),
         writing: estimateSkillProgress(results),
@@ -180,7 +187,6 @@ export default function Dashboard2() {
     )
   }
 
-  // ---------- Sidebar ----------
   const Sidebar = () => (
     <motion.div
       initial={{ x: -250 }}
@@ -226,13 +232,8 @@ export default function Dashboard2() {
     </a>
   )
 
-  // ---------- MainContent ----------
   const MainContent = () => (
-    <div
-      className={`flex-grow p-8 transition-all duration-300 ${
-        sidebarOpen ? 'ml-64' : 'ml-0'
-      }`}
-    >
+    <div className={`flex-grow p-8 transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-0'}`}>
       <header className="flex justify-between items-center mb-8">
         <h2 className="text-3xl font-bold text-white">
           مرحباً، {studentData.name}
@@ -247,94 +248,51 @@ export default function Dashboard2() {
         </Button>
       </header>
 
-      {/* Stats */}
+      {/* البطاقات الإحصائية */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <StatCard
-          icon={Trophy}
-          title="متوسط الدرجات"
-          value={`${studentData.averageScore}%`}
-          color="text-green-400"
-        />
-        <StatCard
-          icon={Clock}
-          title="ساعات المذاكرة"
-          value={`${studentData.studyHours}`}
-          color="text-blue-400"
-        />
-        <StatCard
-          icon={CheckCircle2}
-          title="اختبارات مكتملة"
-          value={`${studentData.completedTests}/${studentData.totalTests}`}
-          color="text-yellow-400"
-        />
-        <StatCard
-          icon={Zap}
-          title="سلسلة الإنجاز"
-          value={`${studentData.currentStreak} أيام`}
-          color="text-red-400"
-        />
+        <StatCard icon={Trophy} title="متوسط الدرجات" value={`${studentData.averageScore}%`} color="text-green-400" />
+        <StatCard icon={Clock} title="ساعات المذاكرة" value={`${studentData.studyHours}`} color="text-blue-400" />
+        <StatCard icon={CheckCircle2} title="اختبارات مكتملة" value={`${studentData.completedTests}/${studentData.totalTests}`} color="text-yellow-400" />
+        <StatCard icon={Zap} title="سلسلة الإنجاز" value={`${studentData.currentStreak} أيام`} color="text-red-400" />
       </div>
 
-      {/* Tabs */}
+      {/* التبويبات */}
       <Tabs defaultValue="overview" className="w-full">
         <TabsList className="bg-[#2a2a2a] text-white">
-          <TabsTrigger
-            value="overview"
-            className="data-[state=active]:bg-primary-gh data-[state=active]:text-white"
-          >
+          <TabsTrigger value="overview" className="data-[state=active]:bg-primary-gh data-[state=active]:text-white">
             النظرة العامة
           </TabsTrigger>
-          <TabsTrigger
-            value="progress"
-            className="data-[state=active]:bg-primary-gh data-[state=active]:text-white"
-          >
+          <TabsTrigger value="progress" className="data-[state=active]:bg-primary-gh data-[state=active]:text-white">
             التقدم
           </TabsTrigger>
-          <TabsTrigger
-            value="tasks"
-            className="data-[state=active]:bg-primary-gh data-[state=active]:text-white"
-          >
+          <TabsTrigger value="tasks" className="data-[state=active]:bg-primary-gh data-[state=active]:text-white">
             المهام
           </TabsTrigger>
         </TabsList>
 
+        {/* النظرة العامة */}
         <TabsContent value="overview" className="mt-4">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <Card className="lg:col-span-2 bg-[#1a1a1a] border-[#2a2a2a] text-white">
               <CardHeader>
                 <CardTitle>آخر النشاطات</CardTitle>
-                <CardDescription className="text-gray-400">
-                  آخر 4 اختبارات مكتملة
-                </CardDescription>
+                <CardDescription className="text-gray-400">آخر 4 اختبارات مكتملة</CardDescription>
               </CardHeader>
               <CardContent>
                 <ul className="space-y-4">
                   {studentData.recentTests.length === 0 ? (
-                    <li className="text-gray-400">
-                      لا توجد اختبارات مكتملة بعد.
-                    </li>
+                    <li className="text-gray-400">لا توجد اختبارات مكتملة بعد.</li>
                   ) : (
                     studentData.recentTests.map(test => (
-                      <li
-                        key={test.id}
-                        className="flex justify-between items-center border-b border-[#2a2a2a] pb-2 last:border-b-0"
-                      >
+                      <li key={test.id} className="flex justify-between items-center border-b border-[#2a2a2a] pb-2 last:border-b-0">
                         <div className="flex items-center">
                           <Play className="h-5 w-5 text-primary-gh mr-3" />
                           <div>
                             <p className="font-medium">{test.name}</p>
-                            <p className="text-sm text-gray-400">
-                              {test.date}
-                            </p>
+                            <p className="text-sm text-gray-400">{test.date}</p>
                           </div>
                         </div>
-                        <span
-                          className={`font-bold ${
-                            test.score >= 80
-                              ? 'text-green-400'
-                              : 'text-yellow-400'
-                          }`}
-                        >
+                        <span className={`font-bold ${test.score >= 80 ? 'text-green-400' : 'text-yellow-400'}`}>
                           {Math.round(test.score)}%
                         </span>
                       </li>
@@ -347,22 +305,15 @@ export default function Dashboard2() {
             <Card className="bg-[#1a1a1a] border-[#2a2a2a] text-white">
               <CardHeader>
                 <CardTitle>المهام القادمة</CardTitle>
-                <CardDescription className="text-gray-400">
-                  مهام وامتحانات قادمة
-                </CardDescription>
+                <CardDescription className="text-gray-400">مهام وامتحانات قادمة</CardDescription>
               </CardHeader>
               <CardContent>
                 {studentData.upcomingTasks.length === 0 ? (
-                  <p className="text-gray-500">
-                    لا توجد مهام قادمة. أضف جدول tasks إن رغبت.
-                  </p>
+                  <p className="text-gray-500">لا توجد مهام قادمة. أضف جدول tasks إن رغبت.</p>
                 ) : (
                   <ul className="space-y-4">
                     {studentData.upcomingTasks.map(task => (
-                      <li
-                        key={task.id}
-                        className="flex justify-between items-center border-b border-[#2a2a2a] pb-2 last:border-b-0"
-                      >
+                      <li key={task.id} className="flex justify-between items-center border-b border-[#2a2a2a] pb-2 last:border-b-0">
                         <div className="flex items-center">
                           <Calendar className="h-5 w-5 text-blue-400 mr-3" />
                           <div>
@@ -385,9 +336,7 @@ export default function Dashboard2() {
           <Card className="bg-[#1a1a1a] border-[#2a2a2a] text-white mt-6">
             <CardHeader>
               <CardTitle>📚 الاختبارات المتاحة</CardTitle>
-              <CardDescription className="text-gray-400">
-                قائمة الاختبارات التي يمكنك الدخول عليها بحسب اشتراكك
-              </CardDescription>
+              <CardDescription className="text-gray-400">قائمة الاختبارات التي يمكنك الدخول عليها بحسب اشتراكك</CardDescription>
             </CardHeader>
             <CardContent>
               {studentData.tests?.length === 0 ? (
@@ -395,16 +344,11 @@ export default function Dashboard2() {
               ) : (
                 <ul className="space-y-3">
                   {studentData.tests.map(test => (
-                    <li
-                      key={test.id}
-                      className="flex justify-between items-center border-b border-[#2a2a2a] pb-2 last:border-b-0"
-                    >
+                    <li key={test.id} className="flex justify-between items-center border-b border-[#2a2a2a] pb-2 last:border-b-0">
                       <div>
                         <p className="font-medium">{test.title}</p>
                         {test.description ? (
-                          <p className="text-sm text-gray-400">
-                            {test.description}
-                          </p>
+                          <p className="text-sm text-gray-400">{test.description}</p>
                         ) : null}
                       </div>
                       <Button
@@ -421,27 +365,17 @@ export default function Dashboard2() {
           </Card>
         </TabsContent>
 
+        {/* التقدم */}
         <TabsContent value="progress" className="mt-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <ProgressCard
-              title="Reading Skills"
-              progress={studentData.progress.reading}
-            />
-            <ProgressCard
-              title="Writing Skills"
-              progress={studentData.progress.writing}
-            />
-            <ProgressCard
-              title="Speaking Skills"
-              progress={studentData.progress.speaking}
-            />
-            <ProgressCard
-              title="Listening Skills"
-              progress={studentData.progress.listening}
-            />
+            <ProgressCard title="Reading Skills" progress={studentData.progress.reading} />
+            <ProgressCard title="Writing Skills" progress={studentData.progress.writing} />
+            <ProgressCard title="Speaking Skills" progress={studentData.progress.speaking} />
+            <ProgressCard title="Listening Skills" progress={studentData.progress.listening} />
           </div>
         </TabsContent>
 
+        {/* المهام */}
         <TabsContent value="tasks" className="mt-4">
           <Card className="bg-[#1a1a1a] border-[#2a2a2a] text-white">
             <CardHeader>
@@ -451,9 +385,7 @@ export default function Dashboard2() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <p className="text-gray-500">
-                يمكنك إنشاء جدول tasks وإدارته وربطه بالمستخدمين.
-              </p>
+              <p className="text-gray-500">يمكنك إنشاء جدول tasks وإدارته وربطه بالمستخدمين.</p>
             </CardContent>
           </Card>
         </TabsContent>
@@ -464,9 +396,7 @@ export default function Dashboard2() {
   const StatCard = ({ icon: Icon, title, value, color }) => (
     <Card className="bg-[#1a1a1a] border-[#2a2a2a] text-white">
       <CardHeader className="flex items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-gray-400">
-          {title}
-        </CardTitle>
+        <CardTitle className="text-sm font-medium text-gray-400">{title}</CardTitle>
         <Icon className={`h-5 w-5 ${color}`} />
       </CardHeader>
       <CardContent>
@@ -487,11 +417,7 @@ export default function Dashboard2() {
           <span className="text-sm font-medium">{Math.round(progress)}%</span>
         </div>
         <p className="text-xs text-gray-500 mt-2">
-          {progress < 50
-            ? 'Needs improvement'
-            : progress < 80
-            ? 'Good progress'
-            : 'Excellent!'}
+          {progress < 50 ? 'Needs improvement' : progress < 80 ? 'Good progress' : 'Excellent!'}
         </p>
       </CardContent>
     </Card>
@@ -507,9 +433,7 @@ export default function Dashboard2() {
 
 /* ---------------- Helpers ---------------- */
 
-function computeCurrentStreak(
-  attempts: { completed_at: string | null }[]
-): number {
+function computeCurrentStreak(attempts: { completed_at: string | null }[]): number {
   if (!attempts || attempts.length === 0) return 0
   const days = Array.from(
     new Set(
@@ -525,8 +449,7 @@ function computeCurrentStreak(
   let prevDate = new Date(days[0])
   const isTodayOrYesterday =
     prevDate.toDateString() === today.toDateString() ||
-    prevDate.toDateString() ===
-      new Date(today.getTime() - 864e5).toDateString()
+    prevDate.toDateString() === new Date(today.getTime() - 864e5).toDateString()
   if (!isTodayOrYesterday) return 0
 
   streak = 1
@@ -542,9 +465,7 @@ function computeCurrentStreak(
   return streak
 }
 
-function estimateSkillProgress(
-  results: { percentage: number }[]
-): number {
+function estimateSkillProgress(results: { percentage: number }[]): number {
   if (!results || !results.length) return 0
   const sum = results.reduce((s, r) => s + Number(r.percentage || 0), 0)
   return Math.round(sum / results.length)
