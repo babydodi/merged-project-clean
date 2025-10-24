@@ -22,16 +22,16 @@ import {
 } from 'lucide-react'
 
 // UI components (تأكد إنها موجودة داخل src/components/ui)
-import { Button } from '@/components/ui/button'
+import { Button } from '../../components/ui/button'
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card'
-import { Progress } from '@/components/ui/progress'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+} from '../../components/ui/card'
+import { Progress } from '../../components/ui/progress'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/ui/tabs'
 
 export default function Dashboard2() {
   const supabase = createClientComponentClient()
