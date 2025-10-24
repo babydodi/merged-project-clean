@@ -429,7 +429,7 @@ export default function Dashboard2() {
                         ) : null}
                       </div>
                       <Button
-                        onClick={() => router.push(`/tests/${test.id}`)}
+                        onClick={() => router.push(`/test/${test.id}`)}
                         className="bg-primary-gh text-white px-3 py-1 rounded"
                       >
                         ابدأ
