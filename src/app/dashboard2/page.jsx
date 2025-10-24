@@ -29,9 +29,12 @@ import {
   X,
   Zap,
 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 
 export default function Dashboard2() {
   const supabase = createClientComponentClient()
+  const router = useRouter()
+
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [loading, setLoading] = useState(true)
   const [studentData, setStudentData] = useState({
@@ -41,9 +44,10 @@ export default function Dashboard2() {
     averageScore: 0,
     studyHours: 0,
     currentStreak: 0,
-    recentTests: [],
-    upcomingTasks: [],
+    recentTests: [] as { id: string; name: string; score: number; date: string }[],
+    upcomingTasks: [] as { id: string; name: string; date: string; type: string }[],
     progress: { reading: 0, writing: 0, speaking: 0, listening: 0 },
+    tests: [] as { id: string; title: string; description: string | null }[],
   })
 
   useEffect(() => {
@@ -56,26 +60,44 @@ export default function Dashboard2() {
       const { data: authData } = await supabase.auth.getUser()
       const user = authData?.user || null
 
-      // 2) جلب الاسم من جدول users
+      // 2) جلب الاسم والدور من جدول users
       let name = 'طالب'
+      let role: 'admin' | 'subscriber' | 'unsubscribed' = 'unsubscribed'
       if (user) {
         const { data: profile } = await supabase
           .from('users')
-          .select('full_name')
+          .select('full_name, role')
           .eq('id', user.id)
           .single()
         if (profile?.full_name) name = profile.full_name
+        if (profile?.role) role = profile.role as typeof role
       }
 
-      // 3) جلب كل الاختبارات
-      const { data: tests } = await supabase
+      // 3) جلب الاختبارات بحسب الدور والإتاحة
+      let query = supabase
         .from('tests')
-        .select('id, title, description, created_at')
+        .select('id, title, description, availability, is_published, created_at')
         .order('created_at', { ascending: false })
 
+      // الأدمن يشوف الكل، غيره يشوف المنشور فقط
+      if (role !== 'admin') {
+        query = query.eq('is_published', true)
+      }
+
+      if (role === 'admin') {
+        // لا قيود إضافية
+      } else if (role === 'subscriber') {
+        query = query.in('availability', ['all', 'subscribers'])
+      } else {
+        // مستخدم غير مشترك
+        query = query.eq('availability', 'all')
+      }
+
+      const { data: tests } = await query
+
       // 4) جلب المحاولات والنتائج للمستخدم
-      let attempts = []
-      let results = []
+      let attempts: { id: string; test_id: string; started_at: string; completed_at: string | null }[] = []
+      let results: { attempt_id: string; percentage: number }[] = []
       if (user) {
         const { data: userAttempts } = await supabase
           .from('test_attempts')
@@ -100,7 +122,7 @@ export default function Dashboard2() {
           id: a.id,
           name: t?.title || 'اختبار',
           score: r?.percentage || 0,
-          date: a.completed_at.split('T')[0],
+          date: a.completed_at ? a.completed_at.split('T')[0] : '',
         }
       })
 
@@ -115,7 +137,7 @@ export default function Dashboard2() {
       // 7) سلسلة الإنجاز
       const currentStreak = computeCurrentStreak(attempts)
 
-      // 8) تقدّم المهارات
+      // 8) تقدّم المهارات (تقدير بسيط من النتائج)
       const progress = {
         reading: estimateSkillProgress(results),
         writing: estimateSkillProgress(results),
@@ -128,11 +150,17 @@ export default function Dashboard2() {
         totalTests: tests?.length || 0,
         completedTests: recentCompleted.length,
         averageScore,
-        studyHours: 0, // لو عندك جدول تتبع الوقت
+        studyHours: 0,
         currentStreak,
         recentTests,
-        upcomingTasks: [], // إذا أضفت جدول tasks لاحقًا
+        upcomingTasks: [],
         progress,
+        tests:
+          (tests || []).map(t => ({
+            id: t.id,
+            title: t.title,
+            description: t.description ?? '',
+          })) ?? [],
       })
     } catch (err) {
       console.error('Error loading dashboard:', err)
@@ -352,6 +380,45 @@ export default function Dashboard2() {
               </CardContent>
             </Card>
           </div>
+
+          {/* الاختبارات المتاحة */}
+          <Card className="bg-[#1a1a1a] border-[#2a2a2a] text-white mt-6">
+            <CardHeader>
+              <CardTitle>📚 الاختبارات المتاحة</CardTitle>
+              <CardDescription className="text-gray-400">
+                قائمة الاختبارات التي يمكنك الدخول عليها بحسب اشتراكك
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {studentData.tests?.length === 0 ? (
+                <p className="text-gray-500">لا توجد اختبارات متاحة حالياً</p>
+              ) : (
+                <ul className="space-y-3">
+                  {studentData.tests.map(test => (
+                    <li
+                      key={test.id}
+                      className="flex justify-between items-center border-b border-[#2a2a2a] pb-2 last:border-b-0"
+                    >
+                      <div>
+                        <p className="font-medium">{test.title}</p>
+                        {test.description ? (
+                          <p className="text-sm text-gray-400">
+                            {test.description}
+                          </p>
+                        ) : null}
+                      </div>
+                      <Button
+                        onClick={() => router.push(`/tests/${test.id}`)}
+                        className="bg-primary-gh text-white px-3 py-1 rounded"
+                      >
+                        ابدأ
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="progress" className="mt-4">
@@ -440,13 +507,15 @@ export default function Dashboard2() {
 
 /* ---------------- Helpers ---------------- */
 
-function computeCurrentStreak(attempts) {
+function computeCurrentStreak(
+  attempts: { completed_at: string | null }[]
+): number {
   if (!attempts || attempts.length === 0) return 0
   const days = Array.from(
     new Set(
       attempts
         .filter(a => a.completed_at)
-        .map(a => a.completed_at.split('T')[0])
+        .map(a => (a.completed_at as string).split('T')[0])
     )
   ).sort((a, b) => (a > b ? -1 : 1))
   if (!days.length) return 0
@@ -463,10 +532,7 @@ function computeCurrentStreak(attempts) {
   streak = 1
   for (let i = 1; i < days.length; i++) {
     const curr = new Date(days[i])
-    if (
-      (prevDate.getTime() - curr.getTime()) / 864e5 ===
-      1
-    ) {
+    if ((prevDate.getTime() - curr.getTime()) / 864e5 === 1) {
       streak++
       prevDate = curr
     } else {
@@ -476,7 +542,9 @@ function computeCurrentStreak(attempts) {
   return streak
 }
 
-function estimateSkillProgress(results) {
+function estimateSkillProgress(
+  results: { percentage: number }[]
+): number {
   if (!results || !results.length) return 0
   const sum = results.reduce((s, r) => s + Number(r.percentage || 0), 0)
   return Math.round(sum / results.length)
