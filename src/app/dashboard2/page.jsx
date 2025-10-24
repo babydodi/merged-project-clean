@@ -92,8 +92,16 @@ export default function Dashboard2() {
 
       const { data: tests } = await query
 
-      let attempts = []
-      let results = []
+      // --- جلب محاولات المستخدم وحساب الإحصاءات الدقيقة ---
+      let attempts: {
+        id: string
+        test_id: string
+        started_at: string | null
+        completed_at: string | null
+      }[] = []
+
+      let results: { attempt_id: string; percentage: number }[] = []
+
       if (user) {
         const { data: userAttempts } = await supabase
           .from('test_attempts')
@@ -101,15 +109,51 @@ export default function Dashboard2() {
           .eq('user_id', user.id)
           .order('completed_at', { ascending: false })
 
-        const { data: userResults } = await supabase
-          .from('user_results')
-          .select('attempt_id, percentage')
-
         attempts = userAttempts || []
-        results = userResults || []
+
+        if (attempts.length) {
+          const attemptIds = attempts.map(a => a.id)
+          const { data: userResults } = await supabase
+            .from('user_results')
+            .select('attempt_id, percentage')
+            .in('attempt_id', attemptIds)
+
+          results = userResults || []
+        } else {
+          results = []
+        }
       }
 
-      const recentCompleted = attempts.filter(a => a.completed_at).slice(0, 4)
+      // عدد المحاولات المكتملة (لكل المحاولات التي لها completed_at)
+      const completedAttempts = attempts.filter(a => a.completed_at)
+      const completedTestsCount = completedAttempts.length
+
+      // حساب ساعات المذاكرة من فرق الوقت بين started_at و completed_at (ساعات)
+      function durationHours(start?: string | null, end?: string | null) {
+        if (!start || !end) return 0
+        const s = new Date(start).getTime()
+        const e = new Date(end).getTime()
+        if (!s || !e || e <= s) return 0
+        return (e - s) / 3_600_000
+      }
+
+      const totalStudyHoursRaw = completedAttempts.reduce(
+        (sum, a) => sum + durationHours(a.started_at, a.completed_at),
+        0
+      )
+      const totalStudyHours = Math.round(totalStudyHoursRaw * 10) / 10 // تقريب لمكان عشري واحد
+
+      // حساب متوسط الدرجات من user_results المرتبطة بمحاولات المستخدم
+      const averageScore =
+        results.length > 0
+          ? Math.round(
+              results.reduce((sum, r) => sum + Number(r.percentage || 0), 0) /
+                results.length
+            )
+          : 0
+
+      // بناء recentTests (آخر 4 محاولات مكتملة مع اسم الاختبار والدرجة)
+      const recentCompleted = completedAttempts.slice(0, 4)
       const recentTests = recentCompleted.map(a => {
         const t = tests?.find(x => x.id === a.test_id)
         const r = results.find(x => x.attempt_id === a.id)
@@ -120,13 +164,6 @@ export default function Dashboard2() {
           date: a.completed_at ? a.completed_at.split('T')[0] : '',
         }
       })
-
-      const averageScore = results.length
-        ? Math.round(
-            results.reduce((sum, r) => sum + Number(r.percentage || 0), 0) /
-              results.length
-          )
-        : 0
 
       const currentStreak = computeCurrentStreak(attempts)
 
@@ -140,9 +177,9 @@ export default function Dashboard2() {
       setStudentData({
         name,
         totalTests: tests?.length || 0,
-        completedTests: recentCompleted.length,
+        completedTests: completedTestsCount,
         averageScore,
-        studyHours: 0,
+        studyHours: totalStudyHours,
         currentStreak,
         recentTests,
         upcomingTasks: [],
@@ -352,9 +389,7 @@ export default function Dashboard2() {
                         </div>
                         <span
                           className={`font-bold ${
-                            test.score >= 80
-                              ? 'text-green-400'
-                              : 'text-yellow-400'
+                            test.score >= 80 ? 'text-green-400' : 'text-yellow-400'
                           }`}
                         >
                           {Math.round(test.score)}%
@@ -423,9 +458,7 @@ export default function Dashboard2() {
                       <div>
                         <p className="font-medium">{test.title}</p>
                         {test.description ? (
-                          <p className="text-sm text-gray-400">
-                            {test.description}
-                          </p>
+                          <p className="text-sm text-gray-400">{test.description}</p>
                         ) : null}
                       </div>
                       <Button
@@ -444,22 +477,10 @@ export default function Dashboard2() {
 
         <TabsContent value="progress" className="mt-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <ProgressCard
-              title="Reading Skills"
-              progress={studentData.progress.reading}
-            />
-            <ProgressCard
-              title="Writing Skills"
-              progress={studentData.progress.writing}
-            />
-            <ProgressCard
-              title="Speaking Skills"
-              progress={studentData.progress.speaking}
-            />
-            <ProgressCard
-              title="Listening Skills"
-              progress={studentData.progress.listening}
-            />
+            <ProgressCard title="Reading Skills" progress={studentData.progress.reading} />
+            <ProgressCard title="Writing Skills" progress={studentData.progress.writing} />
+            <ProgressCard title="Speaking Skills" progress={studentData.progress.speaking} />
+            <ProgressCard title="Listening Skills" progress={studentData.progress.listening} />
           </div>
         </TabsContent>
 
@@ -514,9 +535,7 @@ function computeCurrentStreak(attempts) {
   streak = 1
   for (let i = 1; i < days.length; i++) {
     const current = new Date(days[i])
-    const diffDays = Math.round(
-      (prevDate - current) / (1000 * 60 * 60 * 24)
-    )
+    const diffDays = Math.round((prevDate - current) / (1000 * 60 * 60 * 24))
     if (diffDays === 1) {
       streak++
       prevDate = current
@@ -527,7 +546,5 @@ function computeCurrentStreak(attempts) {
 
 function estimateSkillProgress(results) {
   if (!results || results.length === 0) return 0
-  return (
-    results.reduce((acc, r) => acc + (r.percentage || 0), 0) / results.length
-  )
+  return Math.round(results.reduce((acc, r) => acc + Number(r.percentage || 0), 0) / results.length)
 }
