@@ -54,6 +54,7 @@ export default function Dashboard2() {
 
   useEffect(() => {
     init()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function init() {
@@ -93,14 +94,8 @@ export default function Dashboard2() {
       const { data: tests } = await query
 
       // --- جلب محاولات المستخدم وحساب الإحصاءات الدقيقة ---
-      let attempts: {
-        id: string
-        test_id: string
-        started_at: string | null
-        completed_at: string | null
-      }[] = []
-
-      let results: { attempt_id: string; percentage: number }[] = []
+      let attempts = []
+      let results = []
 
       if (user) {
         const { data: userAttempts } = await supabase
@@ -129,7 +124,7 @@ export default function Dashboard2() {
       const completedTestsCount = completedAttempts.length
 
       // حساب ساعات المذاكرة من فرق الوقت بين started_at و completed_at (ساعات)
-      function durationHours(start?: string | null, end?: string | null) {
+      function durationHours(start, end) {
         if (!start || !end) return 0
         const s = new Date(start).getTime()
         const e = new Date(end).getTime()
