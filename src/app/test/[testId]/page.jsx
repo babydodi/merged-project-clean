@@ -77,7 +77,7 @@ export default function TestPage() {
 
       const { data: chaptersData, error: chErr } = await supabase
         .from('chapters')
-        .select('id, type, title, idx, time_limit')
+        .select('id, type, title, idx, duration_seconds')
         .eq('test_id', id)
         .order('idx', { ascending: true });
       if (chErr) throw chErr;
