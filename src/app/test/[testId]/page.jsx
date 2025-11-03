@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { Volume2, ChevronRight, Lightbulb, Home } from 'lucide-react';
+import { Volume2, ChevronRight, Lightbulb, Home, Clock } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import HintModal from '../../../components/HintModal';
 import ResultsPage from '../../../components/ResultsPage';
@@ -26,9 +26,25 @@ export default function TestPage() {
   const [wrongAnswers, setWrongAnswers] = useState([]);
   const [activeHintQuestion, setActiveHintQuestion] = useState(null);
 
+  // Chapter timers: map chapterId -> remaining seconds
+  const [chapterTimers, setChapterTimers] = useState({});
+  const timerRef = useRef(null);
+
   useEffect(() => {
     initTest();
+    // cleanup on unmount
+    return () => {
+      clearInterval(timerRef.current);
+    };
   }, [id]);
+
+  // start/stop timer when chapter changes
+  useEffect(() => {
+    startChapterTimerForCurrent();
+    return () => {
+      clearInterval(timerRef.current);
+    };
+  }, [currentChapterIndex, chapters]);
 
   const initTest = async () => {
     console.log('🔎 initTest() id =', id);
@@ -61,7 +77,7 @@ export default function TestPage() {
 
       const { data: chaptersData, error: chErr } = await supabase
         .from('chapters')
-        .select('id, type, title, idx')
+        .select('id, type, title, idx, time_limit')
         .eq('test_id', id)
         .order('idx', { ascending: true });
       if (chErr) throw chErr;
@@ -91,7 +107,30 @@ export default function TestPage() {
           assembled.push({ ...ch, questions });
         }
       }
+
+      // فرز ثابت: listening -> reading -> grammar، مع الحفاظ على ترتيب idx داخل كل نوع
+      const order = { listening: 0, reading: 1, grammar: 2 };
+      assembled.sort((a, b) => {
+        const diff = (order[a.type] ?? 99) - (order[b.type] ?? 99);
+        if (diff !== 0) return diff;
+        return (a.idx ?? 0) - (b.idx ?? 0);
+      });
+
       setChapters(assembled);
+
+      // تجهيز مؤقتات الفصول من الحقل time_limit (بالثواني)
+      const timers = {};
+      for (const ch of assembled) {
+        // افتراض: time_limit عمود رقمي بالثواني؛ إن كان مفقودًا استخدم 0
+        timers[ch.id] = ch.time_limit ? Number(ch.time_limit) : 0;
+      }
+      setChapterTimers(timers);
+
+      // إعادة تهيئة الحالات للتأكد من بدء الاختبار من أول فصل وبالحالة الافتراضية
+      setCurrentChapterIndex(0);
+      setCurrentPieceIndex(0);
+      setPhase('intro');
+      setShowResult(false);
     } catch (error) {
       console.error('Init error:', error);
     } finally {
@@ -186,17 +225,44 @@ export default function TestPage() {
     setWrongAnswers(wrongs);
   };
 
-  const handleNext = async () => {
+  const startChapterTimerForCurrent = () => {
+    clearInterval(timerRef.current);
+    if (!currentChapter) return;
+    const chId = currentChapter.id;
+    const remaining = chapterTimers[chId] ?? 0;
+    if (!remaining || remaining <= 0) return;
+    // قم بتشغيل عد تنازلي كل ثانية
+    timerRef.current = setInterval(() => {
+      setChapterTimers(prev => {
+        const next = { ...prev };
+        next[chId] = Math.max(0, (next[chId] ?? 0) - 1);
+        // إذا وصل إلى 0 ننتقل للفصل التالي
+        if (next[chId] === 0) {
+          clearInterval(timerRef.current);
+          // تأخير صغير ليترك وقتاً لحفظ الإجابات قبل الانتقال
+          setTimeout(() => {
+            handleNext(true); // تشير إلى أن الانتقال بسبب انتهاء الوقت
+          }, 200);
+        }
+        return next;
+      });
+    }, 1000);
+  };
+
+  const handleNext = async (fromTimer = false) => {
     if (!currentChapter) return;
 
+    // حفظ إجابات الجزء الحالي قبل الانتقال
     if (currentChapter.type === 'listening') {
-      if (phase === 'intro') {
-        setPhase('audio');
-        return;
-      }
-      if (phase === 'audio') {
-        setPhase('questions');
-        return;
+      if (!fromTimer) {
+        if (phase === 'intro') {
+          setPhase('audio');
+          return;
+        }
+        if (phase === 'audio') {
+          setPhase('questions');
+          return;
+        }
       }
       await savePieceAnswers('listening');
       const last = currentChapter.pieces.length - 1;
@@ -204,9 +270,13 @@ export default function TestPage() {
         setCurrentPieceIndex(i => i + 1);
         setPhase('intro');
       } else {
-        setCurrentChapterIndex(ci => ci + 1);
-        setCurrentPieceIndex(0);
-        setPhase('intro');
+        // انتقل للفصل التالي
+        setCurrentChapterIndex(ci => {
+          const next = ci + 1;
+          setCurrentPieceIndex(0);
+          setPhase('intro');
+          return next;
+        });
       }
       return;
     }
@@ -217,9 +287,12 @@ export default function TestPage() {
       if (currentPieceIndex < last) {
         setCurrentPieceIndex(i => i + 1);
       } else {
-        setCurrentChapterIndex(ci => ci + 1);
-        setCurrentPieceIndex(0);
-        setPhase('intro');
+        setCurrentChapterIndex(ci => {
+          const next = ci + 1;
+          setCurrentPieceIndex(0);
+          setPhase('intro');
+          return next;
+        });
       }
       return;
     }
@@ -235,6 +308,14 @@ export default function TestPage() {
       }
       return;
     }
+  };
+
+  // تنسيق الوقت (ثواني -> MM:SS)
+  const formatTime = secs => {
+    if (!secs && secs !== 0) return '';
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
   if (loading) {
@@ -275,10 +356,18 @@ export default function TestPage() {
               <h1 className="text-2xl font-bold text-slate-900">{test?.title}</h1>
               <p className="text-sm text-slate-600 mt-1">{currentChapter?.title}</p>
             </div>
-            <Button onClick={() => router.push('/dashboard')} variant="outline" className="border-slate-300">
-              <Home className="w-4 h-4 ml-2" />
-              الرئيسية
-            </Button>
+            <div className="flex items-center space-x-3">
+              {currentChapter && (chapterTimers[currentChapter.id] ?? 0) > 0 && (
+                <div className="flex items-center text-sm text-slate-700 bg-slate-100 px-3 py-1 rounded">
+                  <Clock className="w-4 h-4 ml-2 text-slate-600" />
+                  <span className="font-medium">{formatTime(chapterTimers[currentChapter.id])}</span>
+                </div>
+              )}
+              <Button onClick={() => router.push('/dashboard')} variant="outline" className="border-slate-300">
+                <Home className="w-4 h-4 ml-2" />
+                الرئيسية
+              </Button>
+            </div>
           </div>
         </div>
       </header>
