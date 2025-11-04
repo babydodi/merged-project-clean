@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { Volume2, ChevronRight, Lightbulb, Home, Clock } from 'lucide-react';
+import { Volume2, ChevronRight, Lightbulb, Home } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import HintModal from '../../../components/HintModal';
 import ResultsPage from '../../../components/ResultsPage';
@@ -26,38 +26,19 @@ export default function TestPage() {
   const [wrongAnswers, setWrongAnswers] = useState([]);
   const [activeHintQuestion, setActiveHintQuestion] = useState(null);
 
-  // Chapter timers: map chapterId -> remaining seconds
-  const [chapterTimers, setChapterTimers] = useState({});
-  const timerRef = useRef(null);
-
   useEffect(() => {
     initTest();
-    // cleanup on unmount
-    return () => {
-      clearInterval(timerRef.current);
-    };
   }, [id]);
 
-  // start/stop timer when chapter changes
-  useEffect(() => {
-    startChapterTimerForCurrent();
-    return () => {
-      clearInterval(timerRef.current);
-    };
-  }, [currentChapterIndex, chapters]);
-
   const initTest = async () => {
-    console.log('🔎 initTest() id =', id);
     try {
       if (!id) {
-        console.error('Missing test id from route params');
         setLoading(false);
         return;
       }
 
-      const {
-        data: { user }
-      } = await supabase.auth.getUser();
+      // إنشاء محاولة اختبار
+      const { data: { user } } = await supabase.auth.getUser();
       const payload = user ? { test_id: id, user_id: user.id } : { test_id: id };
       const { data: attempt, error: attemptErr } = await supabase
         .from('test_attempts')
@@ -67,6 +48,7 @@ export default function TestPage() {
       if (attemptErr) throw attemptErr;
       setAttemptId(attempt.id);
 
+      // جلب بيانات الاختبار
       const { data: testData, error: testErr } = await supabase
         .from('tests')
         .select('*')
@@ -75,6 +57,7 @@ export default function TestPage() {
       if (testErr) throw testErr;
       setTest(testData);
 
+      // جلب الفصول
       const { data: chaptersData, error: chErr } = await supabase
         .from('chapters')
         .select('id, type, title, idx, duration_seconds')
@@ -85,48 +68,69 @@ export default function TestPage() {
       const assembled = [];
       for (const ch of chaptersData) {
         if (ch.type === 'listening') {
-          const { data: pieces } = await supabase
+          const { data: pieces, error: lpErr } = await supabase
             .from('listening_pieces')
-            .select('id, audio_url, transcript, idx, listening_questions(*)')
+            .select(`
+              id,
+              audio_url,
+              transcript,
+              idx,
+              listening_questions (
+                id,
+                question_text,
+                options,
+                answer,
+                hint,
+                explanation,
+                idx
+              )
+            `)
             .eq('chapter_id', ch.id)
             .order('idx', { ascending: true });
-          assembled.push({ ...ch, pieces });
+          if (lpErr) throw lpErr;
+          assembled.push({ ...ch, pieces: pieces || [] });
         } else if (ch.type === 'reading') {
-          const { data: pieces } = await supabase
+          const { data: pieces, error: rpErr } = await supabase
             .from('reading_pieces')
-            .select('id, passage_title, passage, idx, reading_questions(*)')
+            .select(`
+              id,
+              passage_title,
+              passage,
+              idx,
+              reading_questions (
+                id,
+                question_text,
+                options,
+                answer,
+                hint,
+                explanation,
+                idx
+              )
+            `)
             .eq('chapter_id', ch.id)
             .order('idx', { ascending: true });
-          assembled.push({ ...ch, pieces });
+          if (rpErr) throw rpErr;
+          assembled.push({ ...ch, pieces: pieces || [] });
         } else if (ch.type === 'grammar') {
-          const { data: questions } = await supabase
+          const { data: questions, error: gErr } = await supabase
             .from('grammar_questions')
             .select('id, question_text, options, answer, hint, explanation, idx')
             .eq('chapter_id', ch.id)
             .order('idx', { ascending: true });
-          assembled.push({ ...ch, questions });
+          if (gErr) throw gErr;
+          assembled.push({ ...ch, questions: questions || [] });
         }
       }
 
-      // فرز ثابت: listening -> reading -> grammar، مع الحفاظ على ترتيب idx داخل كل نوع
+      // ترتيب الفصول النوعي ثم حسب idx
       const order = { listening: 0, reading: 1, grammar: 2 };
       assembled.sort((a, b) => {
-        const diff = (order[a.type] ?? 99) - (order[b.type] ?? 99);
-        if (diff !== 0) return diff;
+        const t = (order[a.type] ?? 99) - (order[b.type] ?? 99);
+        if (t !== 0) return t;
         return (a.idx ?? 0) - (b.idx ?? 0);
       });
 
       setChapters(assembled);
-
-      // تجهيز مؤقتات الفصول من الحقل time_limit (بالثواني)
-      const timers = {};
-      for (const ch of assembled) {
-        // افتراض: time_limit عمود رقمي بالثواني؛ إن كان مفقودًا استخدم 0
-        timers[ch.id] = ch.time_limit ? Number(ch.time_limit) : 0;
-      }
-      setChapterTimers(timers);
-
-      // إعادة تهيئة الحالات للتأكد من بدء الاختبار من أول فصل وبالحالة الافتراضية
       setCurrentChapterIndex(0);
       setCurrentPieceIndex(0);
       setPhase('intro');
@@ -172,8 +176,7 @@ export default function TestPage() {
 
   const finalizeScoresAndWrongs = () => {
     const computeRatio = chapter => {
-      let total = 0,
-        correct = 0;
+      let total = 0, correct = 0;
       if (!chapter) return 0;
       if (chapter.type === 'listening') {
         for (const p of chapter.pieces) {
@@ -225,44 +228,14 @@ export default function TestPage() {
     setWrongAnswers(wrongs);
   };
 
-  const startChapterTimerForCurrent = () => {
-    clearInterval(timerRef.current);
-    if (!currentChapter) return;
-    const chId = currentChapter.id;
-    const remaining = chapterTimers[chId] ?? 0;
-    if (!remaining || remaining <= 0) return;
-    // قم بتشغيل عد تنازلي كل ثانية
-    timerRef.current = setInterval(() => {
-      setChapterTimers(prev => {
-        const next = { ...prev };
-        next[chId] = Math.max(0, (next[chId] ?? 0) - 1);
-        // إذا وصل إلى 0 ننتقل للفصل التالي
-        if (next[chId] === 0) {
-          clearInterval(timerRef.current);
-          // تأخير صغير ليترك وقتاً لحفظ الإجابات قبل الانتقال
-          setTimeout(() => {
-            handleNext(true); // تشير إلى أن الانتقال بسبب انتهاء الوقت
-          }, 200);
-        }
-        return next;
-      });
-    }, 1000);
-  };
-
-  const handleNext = async (fromTimer = false) => {
+  const handleNext = async () => {
     if (!currentChapter) return;
 
-    // حفظ إجابات الجزء الحالي قبل الانتقال
     if (currentChapter.type === 'listening') {
-      if (!fromTimer) {
-        if (phase === 'intro') {
-          setPhase('audio');
-          return;
-        }
-        if (phase === 'audio') {
-          setPhase('questions');
-          return;
-        }
+      // تبسيط التدفق: من intro مباشرة إلى questions
+      if (phase === 'intro') {
+        setPhase('questions');
+        return;
       }
       await savePieceAnswers('listening');
       const last = currentChapter.pieces.length - 1;
@@ -270,13 +243,9 @@ export default function TestPage() {
         setCurrentPieceIndex(i => i + 1);
         setPhase('intro');
       } else {
-        // انتقل للفصل التالي
-        setCurrentChapterIndex(ci => {
-          const next = ci + 1;
-          setCurrentPieceIndex(0);
-          setPhase('intro');
-          return next;
-        });
+        setCurrentChapterIndex(ci => ci + 1);
+        setCurrentPieceIndex(0);
+        setPhase('intro');
       }
       return;
     }
@@ -287,12 +256,9 @@ export default function TestPage() {
       if (currentPieceIndex < last) {
         setCurrentPieceIndex(i => i + 1);
       } else {
-        setCurrentChapterIndex(ci => {
-          const next = ci + 1;
-          setCurrentPieceIndex(0);
-          setPhase('intro');
-          return next;
-        });
+        setCurrentChapterIndex(ci => ci + 1);
+        setCurrentPieceIndex(0);
+        setPhase('intro');
       }
       return;
     }
@@ -308,14 +274,6 @@ export default function TestPage() {
       }
       return;
     }
-  };
-
-  // تنسيق الوقت (ثواني -> MM:SS)
-  const formatTime = secs => {
-    if (!secs && secs !== 0) return '';
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
   if (loading) {
@@ -356,18 +314,10 @@ export default function TestPage() {
               <h1 className="text-2xl font-bold text-slate-900">{test?.title}</h1>
               <p className="text-sm text-slate-600 mt-1">{currentChapter?.title}</p>
             </div>
-            <div className="flex items-center space-x-3">
-              {currentChapter && (chapterTimers[currentChapter.id] ?? 0) > 0 && (
-                <div className="flex items-center text-sm text-slate-700 bg-slate-100 px-3 py-1 rounded">
-                  <Clock className="w-4 h-4 ml-2 text-slate-600" />
-                  <span className="font-medium">{formatTime(chapterTimers[currentChapter.id])}</span>
-                </div>
-              )}
-              <Button onClick={() => router.push('/dashboard')} variant="outline" className="border-slate-300">
-                <Home className="w-4 h-4 ml-2" />
-                الرئيسية
-              </Button>
-            </div>
+            <Button onClick={() => router.push('/dashboard')} variant="outline" className="border-slate-300">
+              <Home className="w-4 h-4 ml-2" />
+              الرئيسية
+            </Button>
           </div>
         </div>
       </header>
@@ -389,7 +339,7 @@ export default function TestPage() {
                   <Volume2 className="w-16 h-16 text-blue-600 mx-auto mb-4" />
                   <h2 className="text-2xl font-semibold text-slate-900 mb-4">قسم الاستماع</h2>
                   <p className="text-lg text-slate-600 mb-6">
-                    سيتم تشغيل المقطع مرة واحدة. استمع جيدًا ثم أجب على الأسئلة.
+                    اضغط ابدأ للانتقال مباشرة إلى الأسئلة الخاصة بالمقطع الحالي.
                   </p>
                   <Button onClick={handleNext} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 text-lg">
                     ابدأ <ChevronRight className="w-5 h-5 ml-2" />
@@ -397,21 +347,15 @@ export default function TestPage() {
                 </div>
               </div>
             )}
-            {phase === 'audio' && (
-              <div className="max-w-2xl mx-auto">
-                <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-8 text-center">
-                  <Volume2 className="w-12 h-12 text-blue-600 mx-auto mb-6" />
-                  <audio autoPlay controls className="mb-6">
-                    <source src={currentChapter.pieces[currentPieceIndex].audio_url} type="audio/mpeg" />
-                  </audio>
-                  <Button onClick={handleNext} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5">
-                    التالي <ChevronRight className="w-5 h-5 ml-2" />
-                  </Button>
-                </div>
-              </div>
-            )}
             {phase === 'questions' && (
               <div className="max-w-4xl mx-auto space-y-6">
+                {/* تشغيل الصوت فوق الأسئلة إن رغبت */}
+                <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+                  <audio controls className="w-full">
+                    <source src={currentChapter.pieces[currentPieceIndex].audio_url} type="audio/mpeg" />
+                  </audio>
+                </div>
+
                 {currentChapter.pieces[currentPieceIndex].listening_questions.map((q, i) => (
                   <div key={q.id} className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
                     <div className="flex items-start justify-between mb-4">
