@@ -23,7 +23,8 @@ export async function POST(req) {
       ExpiryDate
     } = body;
 
-    const plan = UserDefinedField || (InvoiceValue == 50 ? 'basic' : 'premium');
+    const plan = UserDefinedField; // يجيك "basic" أو "premium" من initiate
+
     const userId = CustomerReference || null;
 
     // نحفظ السجل دائماً للمرجعية
