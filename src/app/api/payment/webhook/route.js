@@ -30,21 +30,16 @@ export async function POST(req) {
     const customerRef = data?.CustomerReference ?? null;
     const txStatus = (data?.TransactionStatus ?? '').toUpperCase();
 
-    // سجل ال webhook الخام
-    try {
-      await supabase.from('payment_logs').insert([{
-        invoice_id: Number(invoiceId), // مهم يكون رقم
-        customer_reference: customerRef,
-        event_type: body?.EventType ?? null,
-        event_text: body?.Event ?? null,
-        transaction_status: txStatus,
-        raw_payload: body
-      }]);
-    } catch (e) {
-      console.warn('payment_logs insert warning', e?.message ?? e);
-    }
+    // سجل الويبهوك الخام
+    await supabase.from('payment_logs').insert([{
+      invoice_id: Number(invoiceId),
+      customer_reference: customerRef,
+      event_type: body?.EventType ?? null,
+      event_text: body?.Event ?? null,
+      transaction_status: txStatus,
+      raw_payload: body
+    }]);
 
-    // لو مش PAID نرد 200 ونتوقف
     if (txStatus !== 'PAID') {
       return new Response('ignored', { status: 200 });
     }
@@ -74,11 +69,11 @@ export async function POST(req) {
     const insertPayload = {
       user_id: customerRef,
       plan: data?.UserDefinedField ?? null,
-      invoice_id: Number(invoiceId), // رقم وليس نص
+      invoice_id: Number(invoiceId), // ✅ رقم وليس نص
       customer_email: data?.CustomerEmail ?? null,
       amount: Number(
         data?.InvoiceValueInPayCurrency ??
-        data?.InvoiceValueInDisplayCurrency ?? // صححت الإملاء هنا
+        data?.InvoiceValueInDisplayCurrency ??
         data?.InvoiceValueInBaseCurrency ?? 0
       ),
       status: 'active',
@@ -105,46 +100,33 @@ export async function POST(req) {
       return new Response('ok', { status: 200 });
     }
 
-    // بعد نجاح upsert: حدّث دور المستخدم إلى subscriber إن وُجد
+    // بعد نجاح upsert: حدّث دور المستخدم
     if (customerRef) {
-      try {
-        const { error: roleErr } = await supabase
-          .from('users')
-          .update({ role: 'subscriber' })
-          .eq('id', customerRef);
+      const { error: roleErr } = await supabase
+        .from('users')
+        .update({ role: 'subscriber' })
+        .eq('id', customerRef);
 
-        await supabase.from('payment_logs').insert([{
-          invoice_id: Number(invoiceId),
-          customer_reference: customerRef,
-          event_type: roleErr ? 996 : 995,
-          event_text: roleErr ? 'role_update_failed' : 'role_updated_to_subscriber',
-          transaction_status: 'PAID',
-          raw_payload: roleErr ? { roleErr } : null
-        }]);
-      } catch (e) {
-        await supabase.from('payment_logs').insert([{
-          invoice_id: Number(invoiceId),
-          customer_reference: customerRef,
-          event_type: 994,
-          event_text: 'role_update_exception',
-          transaction_status: 'PAID',
-          raw_payload: { message: e.message, stack: e.stack?.toString?.() }
-        }]);
-      }
+      await supabase.from('payment_logs').insert([{
+        invoice_id: Number(invoiceId),
+        customer_reference: customerRef,
+        event_type: roleErr ? 996 : 995,
+        event_text: roleErr ? 'role_update_failed' : 'role_updated_to_subscriber',
+        transaction_status: 'PAID',
+        raw_payload: roleErr ? { roleErr } : null
+      }]);
     }
 
     return new Response('ok', { status: 200 });
   } catch (err) {
-    try {
-      await supabase.from('payment_logs').insert([{
-        invoice_id: null,
-        customer_reference: null,
-        event_type: 997,
-        event_text: 'handler_exception',
-        transaction_status: 'ERROR',
-        raw_payload: { message: err.message, stack: err.stack?.toString?.() }
-      }]);
-    } catch (_) { /* ignore */ }
+    await supabase.from('payment_logs').insert([{
+      invoice_id: null,
+      customer_reference: null,
+      event_type: 997,
+      event_text: 'handler_exception',
+      transaction_status: 'ERROR',
+      raw_payload: { message: err.message, stack: err.stack?.toString?.() }
+    }]);
     return new Response('error', { status: 200 });
   }
 }
