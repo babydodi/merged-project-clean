@@ -1,20 +1,19 @@
 import { NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/auth-helpers-nextjs';
+import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 
 const PLANS = { basic: 75, premium: 85 };
 
 export async function POST(req) {
   try {
-    // 1) ربط Supabase بالجلسة (كوكيز) مع المتغيرات الصحيحة من Vercel
-    const supabase = createServerClient(
-      { cookies: () => req.cookies },
-      {
-        supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL, // مهم: متوفر عندك في Vercel
-        supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY // مفتاح الـ Service Role
-      }
-    );
+    // أنشئ عميل Supabase مربوط بالكوكيز (الجلسة)
+    const supabase = createServerComponentClient({
+      cookies: () => req.cookies
+    }, {
+      supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+      supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY
+    });
 
-    // 2) تحقق من تسجيل الدخول
+    // جيب المستخدم الحالي من الجلسة
     const {
       data: { user }
     } = await supabase.auth.getUser();
@@ -23,13 +22,11 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Not logged in' }, { status: 401 });
     }
 
-    // 3) تحقق من الخطة
     const { plan } = await req.json();
     if (!plan || !PLANS[plan]) {
       return NextResponse.json({ error: 'Invalid plan' }, { status: 400 });
     }
 
-    // 4) جلب بيانات المستخدم من جدول users
     const { data: dbUser, error } = await supabase
       .from('users')
       .select('id, email')
@@ -40,13 +37,12 @@ export async function POST(req) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    // 5) إعداد بيانات الفاتورة
     const amount = PLANS[plan];
     const emailPrefix = dbUser.email.split('@')[0];
-    const customerName = `${emailPrefix} Test User`; // مناسب للـ Sandbox
+    const customerName = `${emailPrefix} Test User`;
 
     const payload = {
-      PaymentMethodId: 2, // قد تغيّر حسب تفعيل طُرق الدفع في حسابك
+      PaymentMethodId: 2,
       InvoiceValue: amount,
       CustomerName: customerName,
       CustomerEmail: dbUser.email,
@@ -56,7 +52,6 @@ export async function POST(req) {
       ErrorUrl: `${process.env.NEXT_PUBLIC_DOMAIN}/payment/failed`
     };
 
-    // 6) استدعاء MyFatoorah
     const res = await fetch(`${process.env.MF_BASE_URL}/v2/ExecutePayment`, {
       method: 'POST',
       headers: {
@@ -68,26 +63,18 @@ export async function POST(req) {
 
     const data = await res.json();
 
-    // تسجيل أفضل للأخطاء لتشخيص سريع
     if (!res.ok || !data.IsSuccess) {
       console.error('ExecutePayment failed:', {
         status: res.status,
         message: data?.Message,
-        validationErrors: data?.ValidationErrors,
-        baseUrl: process.env.MF_BASE_URL,
-        callback: payload.CallBackUrl,
-        errorUrl: payload.ErrorUrl
+        validationErrors: data?.ValidationErrors
       });
       return NextResponse.json(
-        {
-          error: data?.Message || `ExecutePayment failed (status ${res.status})`,
-          details: data
-        },
+        { error: data?.Message || `ExecutePayment failed (status ${res.status})`, details: data },
         { status: 400 }
       );
     }
 
-    // 7) تخزين الاشتراك كـ pending
     await supabase.from('subscriptions').insert([{
       user_id: dbUser.id,
       plan,
@@ -99,7 +86,6 @@ export async function POST(req) {
       raw_response: data
     }]);
 
-    // 8) إعادة رابط الدفع
     return NextResponse.json({
       invoiceId: String(data.Data.InvoiceId),
       paymentUrl: data.Data.PaymentURL
