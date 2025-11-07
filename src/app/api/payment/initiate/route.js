@@ -7,13 +7,12 @@ export async function POST(req) {
   try {
     // 1) أنشئ عميل Supabase مربوط بالكوكيز (الجلسة)
     const supabase = createServerClient(
-  { cookies: () => req.cookies },
-  {
-    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
-    supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY
-  }
-);
-
+      { cookies: () => req.cookies },
+      {
+        // في Vercel عندك NEXT_PUBLIC_SUPABASE_URL، نستخدمه هنا
+        supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+        supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY
+      }
     );
 
     // 2) جيب المستخدم الحالي من الجلسة
