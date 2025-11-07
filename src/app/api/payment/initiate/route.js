@@ -1,3 +1,4 @@
+// /app/api/payment/initiate/route.js
 import { NextResponse } from 'next/server';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 
@@ -5,15 +6,14 @@ const PLANS = { basic: 75, premium: 85 };
 
 export async function POST(req) {
   try {
-    // أنشئ عميل Supabase مربوط بالكوكيز (الجلسة)
-    const supabase = createServerComponentClient({
-      cookies: () => req.cookies
-    }, {
-      supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
-      supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY
-    });
+    const supabase = createServerComponentClient(
+      { cookies: () => req.cookies },
+      {
+        supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+        supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY
+      }
+    );
 
-    // جيب المستخدم الحالي من الجلسة
     const {
       data: { user }
     } = await supabase.auth.getUser();
@@ -46,7 +46,7 @@ export async function POST(req) {
       InvoiceValue: amount,
       CustomerName: customerName,
       CustomerEmail: dbUser.email,
-      CustomerReference: dbUser.id,
+      CustomerReference: dbUser.id, // UUID من جدول users
       UserDefinedField: plan,
       CallBackUrl: `${process.env.NEXT_PUBLIC_DOMAIN}/payment/success`,
       ErrorUrl: `${process.env.NEXT_PUBLIC_DOMAIN}/payment/failed`
@@ -78,7 +78,7 @@ export async function POST(req) {
     await supabase.from('subscriptions').insert([{
       user_id: dbUser.id,
       plan,
-      invoice_id: String(data.Data.InvoiceId),
+      invoice_id: Number(data.Data.InvoiceId), // ✅ رقم وليس نص
       amount,
       status: 'pending',
       is_active: false,
@@ -87,7 +87,7 @@ export async function POST(req) {
     }]);
 
     return NextResponse.json({
-      invoiceId: String(data.Data.InvoiceId),
+      invoiceId: Number(data.Data.InvoiceId), // ✅ رقم
       paymentUrl: data.Data.PaymentURL
     });
   } catch (e) {
