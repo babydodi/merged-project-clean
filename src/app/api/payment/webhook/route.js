@@ -1,7 +1,8 @@
 // /app/api/payment/webhook/route.js
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const MF_BASE_URL = process.env.MF_BASE_URL || 'https://apitest.myfatoorah.com';
 const MF_API_KEY = process.env.MYFATOORAH_API_KEY;
