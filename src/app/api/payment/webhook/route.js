@@ -2,7 +2,6 @@
 import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const MF_BASE_URL = process.env.MF_BASE_URL || 'https://apitest.myfatoorah.com';
 const MF_API_KEY = process.env.MYFATOORAH_API_KEY;
@@ -34,7 +33,7 @@ export async function POST(req) {
     // سجل ال webhook الخام
     try {
       await supabase.from('payment_logs').insert([{
-        invoice_id: invoiceId,
+        invoice_id: Number(invoiceId), // مهم يكون رقم
         customer_reference: customerRef,
         event_type: body?.EventType ?? null,
         event_text: body?.Event ?? null,
@@ -42,7 +41,6 @@ export async function POST(req) {
         raw_payload: body
       }]);
     } catch (e) {
-      // لا نفشل الويبهوك لو فشل اللوج
       console.warn('payment_logs insert warning', e?.message ?? e);
     }
 
@@ -58,7 +56,7 @@ export async function POST(req) {
 
     if (!isSuccess || String(invoiceStatus).toUpperCase() !== 'PAID') {
       await supabase.from('payment_logs').insert([{
-        invoice_id: invoiceId,
+        invoice_id: Number(invoiceId),
         customer_reference: customerRef,
         event_type: 999,
         event_text: 'verification_failed',
@@ -76,9 +74,13 @@ export async function POST(req) {
     const insertPayload = {
       user_id: customerRef,
       plan: data?.UserDefinedField ?? null,
-      invoice_id: String(invoiceId),
+      invoice_id: Number(invoiceId), // رقم وليس نص
       customer_email: data?.CustomerEmail ?? null,
-      amount: Number(data?.InvoiceValueInPayCurrency ?? data?.InvoiceValueInDisplayCurreny ?? data?.InvoiceValueInBaseCurrency ?? 0),
+      amount: Number(
+        data?.InvoiceValueInPayCurrency ??
+        data?.InvoiceValueInDisplayCurrency ?? // صححت الإملاء هنا
+        data?.InvoiceValueInBaseCurrency ?? 0
+      ),
       status: 'active',
       is_active: true,
       start_date: startDate.toISOString().split('T')[0],
@@ -93,7 +95,7 @@ export async function POST(req) {
 
     if (upsertErr) {
       await supabase.from('payment_logs').insert([{
-        invoice_id,
+        invoice_id: Number(invoiceId),
         customer_reference: customerRef,
         event_type: 998,
         event_text: 'subscription_upsert_error',
@@ -111,28 +113,17 @@ export async function POST(req) {
           .update({ role: 'subscriber' })
           .eq('id', customerRef);
 
-        if (roleErr) {
-          await supabase.from('payment_logs').insert([{
-            invoice_id,
-            customer_reference: customerRef,
-            event_type: 996,
-            event_text: 'role_update_failed',
-            transaction_status: 'PAID',
-            raw_payload: { roleErr }
-          }]);
-        } else {
-          await supabase.from('payment_logs').insert([{
-            invoice_id,
-            customer_reference: customerRef,
-            event_type: 995,
-            event_text: 'role_updated_to_subscriber',
-            transaction_status: 'PAID',
-            raw_payload: null
-          }]);
-        }
+        await supabase.from('payment_logs').insert([{
+          invoice_id: Number(invoiceId),
+          customer_reference: customerRef,
+          event_type: roleErr ? 996 : 995,
+          event_text: roleErr ? 'role_update_failed' : 'role_updated_to_subscriber',
+          transaction_status: 'PAID',
+          raw_payload: roleErr ? { roleErr } : null
+        }]);
       } catch (e) {
         await supabase.from('payment_logs').insert([{
-          invoice_id,
+          invoice_id: Number(invoiceId),
           customer_reference: customerRef,
           event_type: 994,
           event_text: 'role_update_exception',
