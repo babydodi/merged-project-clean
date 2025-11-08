@@ -1,11 +1,21 @@
-export default async function handler(req, res) {
+// src/app/api/payment/webhook/route.js
+
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+export async function POST(req) {
   try {
-    const payload = req.body;
+    const payload = await req.json();
     const invoiceId = payload?.InvoiceId;
     const transactionStatus = payload?.TransactionStatus;
     const customerRef = payload?.CustomerReference;
 
-    console.log("Webhook received:", payload);
+    console.log("🔔 Webhook received:", payload);
 
     // 1. تحديث الاشتراك
     const { error: subErr } = await supabase
@@ -18,9 +28,9 @@ export default async function handler(req, res) {
       .eq("invoice_id", invoiceId);
 
     if (subErr) {
-      console.error("Subscription update failed:", subErr);
+      console.error("❌ Subscription update failed:", subErr);
     } else {
-      console.log("Subscription updated successfully for invoice:", invoiceId);
+      console.log("✅ Subscription updated successfully for invoice:", invoiceId);
     }
 
     // 2. تحديث الدور
@@ -31,23 +41,31 @@ export default async function handler(req, res) {
         .eq("id", customerRef);
 
       if (roleErr) {
-        console.error("Role update failed:", roleErr);
+        console.error("❌ Role update failed:", roleErr);
       } else {
-        console.log("Role updated successfully for user:", customerRef);
+        console.log("✅ Role updated successfully for user:", customerRef);
       }
+    } else {
+      console.log("ℹ️ Skipped role update because status is not PAID or customerRef missing");
     }
 
     // 3. تسجيل في payment_logs
-    await supabase.from("payment_logs").insert({
+    const { error: logErr } = await supabase.from("payment_logs").insert({
       invoice_id: invoiceId,
       customer_reference: customerRef,
       event_text: `Webhook processed - status: ${transactionStatus}`,
       raw_payload: payload,
     });
 
-    res.status(200).json({ ok: true });
+    if (logErr) {
+      console.error("❌ Payment log insert failed:", logErr);
+    } else {
+      console.log("✅ Payment log inserted for invoice:", invoiceId);
+    }
+
+    return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error("Webhook exception:", err);
-    res.status(500).json({ error: "Webhook failed" });
+    console.error("💥 Webhook exception:", err);
+    return NextResponse.json({ error: "Webhook failed" }, { status: 500 });
   }
 }
