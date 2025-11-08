@@ -6,6 +6,7 @@ const PLANS = { basic: 75, premium: 85 };
 
 export async function POST(req) {
   try {
+    // أنشئ عميل Supabase مربوط بالكوكيز (الجلسة)
     const supabase = createServerComponentClient(
       { cookies: () => req.cookies },
       {
@@ -14,6 +15,7 @@ export async function POST(req) {
       }
     );
 
+    // جيب المستخدم الحالي من الجلسة
     const {
       data: { user }
     } = await supabase.auth.getUser();
@@ -27,13 +29,14 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Invalid plan' }, { status: 400 });
     }
 
-    const { data: dbUser, error } = await supabase
+    const { data: dbUser, error: userErr } = await supabase
       .from('users')
       .select('id, email')
       .eq('id', user.id)
       .single();
 
-    if (error || !dbUser) {
+    if (userErr || !dbUser) {
+      console.error('user fetch error:', userErr);
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
@@ -46,7 +49,7 @@ export async function POST(req) {
       InvoiceValue: amount,
       CustomerName: customerName,
       CustomerEmail: dbUser.email,
-      CustomerReference: dbUser.id, // UUID من جدول users
+      CustomerReference: dbUser.id,
       UserDefinedField: plan,
       CallBackUrl: `${process.env.NEXT_PUBLIC_DOMAIN}/payment/success`,
       ErrorUrl: `${process.env.NEXT_PUBLIC_DOMAIN}/payment/failed`
@@ -75,7 +78,8 @@ export async function POST(req) {
       );
     }
 
-    await supabase.from('subscriptions').insert([{
+    // إدخال الاشتراك مع التحقق من الخطأ
+    const { error: subErr } = await supabase.from('subscriptions').insert([{
       user_id: dbUser.id,
       plan,
       invoice_id: Number(data.Data.InvoiceId), // ✅ رقم وليس نص
@@ -86,12 +90,17 @@ export async function POST(req) {
       raw_response: data
     }]);
 
+    if (subErr) {
+      console.error('subscription insert error:', subErr);
+      return NextResponse.json({ error: 'DB insert failed', details: subErr }, { status: 500 });
+    }
+
     return NextResponse.json({
-      invoiceId: Number(data.Data.InvoiceId), // ✅ رقم
+      invoiceId: Number(data.Data.InvoiceId),
       paymentUrl: data.Data.PaymentURL
     });
   } catch (e) {
     console.error('initiate error:', e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return NextResponse.json({ error: 'Server error', details: e.message }, { status: 500 });
   }
 }
