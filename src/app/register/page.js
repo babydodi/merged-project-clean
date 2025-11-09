@@ -3,139 +3,135 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSupabaseClient } from '@supabase/auth-helpers-react';
+import { Button } from '../../ui/button';
+import { Input } from '../../ui/input';
+import { Label } from '../../ui/label';
+import { createHoverSoundHandler } from '../components/useHoverSound';
 
 export default function RegisterPage() {
+  const router = useRouter();
+  const supabase = useSupabaseClient();
+  const playHoverSound = createHoverSoundHandler();
+
   const [email, setEmail] = useState('');
+  const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const router = useRouter();
-  const supabase = useSupabaseClient();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setIsLoading(true);
     setError('');
 
     if (password !== confirmPassword) {
       setError('كلمتا المرور غير متطابقتين');
-      setIsLoading(false);
       return;
     }
-
     if (password.length < 6) {
       setError('كلمة المرور يجب أن تكون 6 أحرف على الأقل');
-      setIsLoading(false);
       return;
     }
 
-    const { error } = await supabase.auth.signUp({
+    setIsLoading(true);
+
+    const { data, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: {
         emailRedirectTo: `${location.origin}/api/auth/callback`,
+        data: { full_name: fullName },
       },
     });
 
     setIsLoading(false);
 
-    if (error) {
-      setError(error.message);
+    if (signUpError) {
+      setError(signUpError.message);
     } else {
+      const user = data.user;
+      await fetch('/api/auth/upsert-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: user.id,
+          email: user.email,
+          full_name: fullName,
+        }),
+      });
       router.push('/login?message=registration_success');
     }
   };
 
+  const handleGoogleRegister = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${location.origin}/api/auth/callback` },
+    });
+    if (error) console.log(error);
+    else {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const googleName = user.user_metadata?.full_name || user.user_metadata?.name;
+        await fetch('/api/auth/upsert-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: user.id,
+            email: user.email,
+            full_name: googleName,
+          }),
+        });
+        router.push('/dashboard');
+      }
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center p-4">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4 md:p-8">
       <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-gradient-to-br from-gray-800 to-black rounded-2xl mx-auto mb-4 flex items-center justify-center border border-gray-800">
-            <svg className="w-8 h-8 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-            </svg>
+        <div className="text-center mb-12">
+          <div className="inline-flex items-center justify-center w-12 h-12 border-2 border-foreground mb-6">
+            <div className="w-6 h-6 border-2 border-foreground" />
           </div>
-          <h1 className="text-2xl font-light text-white">Create Account</h1>
-          <p className="text-gray-500 text-sm mt-1">Sign up to get started</p>
+          <h1 className="text-2xl font-light text-foreground tracking-tight">
+            Create Account
+          </h1>
         </div>
 
-        <div className="bg-gray-900/50 backdrop-blur-sm rounded-2xl p-8 border border-gray-800 shadow-2xl">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-2">
-                Email Address
-              </label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                disabled={isLoading}
-                className="w-full bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-600 text-sm"
-                placeholder="Enter your email"
-              />
-            </div>
+        {error && (
+          <div className="mb-6 p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm text-center">
+            {error}
+          </div>
+        )}
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-2">
-                Password
-              </label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={6}
-                disabled={isLoading}
-                className="w-full bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-600 text-sm"
-                placeholder="Create a password"
-              />
-            </div>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="fullName">Full Name</Label>
+            <Input id="fullName" type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="password">Password</Label>
+            <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="confirmPassword">Confirm Password</Label>
+            <Input id="confirmPassword" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
+          </div>
+          <Button type="submit" disabled={isLoading} onMouseEnter={playHoverSound} className="w-full h-11">
+            {isLoading ? 'Creating account...' : 'Create Account'}
+          </Button>
+        </form>
 
-            <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-300 mb-2">
-                Confirm Password
-              </label>
-              <input
-                id="confirmPassword"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                disabled={isLoading}
-                className="w-full bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-600 text-sm"
-                placeholder="Confirm your password"
-              />
-            </div>
-
-            {error && (
-              <div className="text-red-400 text-center text-sm font-medium">
-                {error}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full bg-gradient-to-r from-gray-800 to-black text-white py-3 px-4 rounded-xl font-medium hover:from-gray-700 hover:to-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? 'Creating account...' : 'Create Account'}
-            </button>
-          </form>
+        <div className="my-8">
+          <Button type="button" variant="outline" onClick={handleGoogleRegister} onMouseEnter={playHoverSound} className="w-full h-11">
+            Continue with Google
+          </Button>
         </div>
-
-        <p className="text-center text-gray-500 text-sm mt-6">
-          Already have an account?{' '}
-          <button
-            onClick={() => router.push('/login')}
-            className="text-gray-400 hover:text-white font-medium transition-colors duration-200"
-          >
-            Sign in
-          </button>
-        </p>
       </div>
     </div>
   );
