@@ -13,7 +13,7 @@ export async function POST(req) {
     const payload = await req.json();
     const data = payload?.Data || {};
     const invoiceId = data?.InvoiceId;
-    const transactionStatus = data?.TransactionStatus;
+    const transactionStatus = (data?.TransactionStatus ?? "").toUpperCase();
     const customerRef = data?.CustomerReference;
 
     console.log("🔔 Webhook received:", payload);
@@ -21,20 +21,37 @@ export async function POST(req) {
     // نعتبر الدفع ناجح إذا الحالة SUCCESS أو PAID
     const isPaid = ["SUCCESS", "PAID"].includes(transactionStatus);
 
-    // 1. تحديث الاشتراك
+    // جهّز start_date و end_date (50 يوم)
+    const startDate = new Date();
+    const endDate = new Date(startDate);
+    endDate.setDate(startDate.getDate() + 50);
+
+    // 1. تحديث أو إدخال الاشتراك
+    const insertPayload = {
+      user_id: customerRef,
+      plan: data?.UserDefinedField ?? "basic",
+      invoice_id: Number(invoiceId),
+      customer_email: data?.CustomerEmail ?? null,
+      amount: Number(
+        data?.InvoiceValueInPayCurrency ??
+        data?.InvoiceValueInDisplayCurrency ??
+        data?.InvoiceValueInBaseCurrency ?? 0
+      ),
+      status: isPaid ? "active" : "failed",
+      is_active: isPaid,
+      start_date: isPaid ? startDate.toISOString().split("T")[0] : null,
+      end_date: isPaid ? endDate.toISOString().split("T")[0] : null,
+      raw_response: payload
+    };
+
     const { error: subErr } = await supabase
       .from("subscriptions")
-      .update({
-        status: isPaid ? "active" : "failed",
-        is_active: isPaid,
-        start_date: isPaid ? new Date().toISOString() : null,
-      })
-      .eq("invoice_id", invoiceId);
+      .upsert([insertPayload], { onConflict: ["invoice_id"] });
 
     if (subErr) {
-      console.error("❌ Subscription update failed:", subErr);
+      console.error("❌ Subscription upsert failed:", subErr);
     } else {
-      console.log("✅ Subscription updated successfully for invoice:", invoiceId);
+      console.log("✅ Subscription upserted successfully for invoice:", invoiceId);
     }
 
     // 2. تحديث الدور
@@ -49,8 +66,6 @@ export async function POST(req) {
       } else {
         console.log("✅ Role updated successfully for user:", customerRef);
       }
-    } else {
-      console.log("ℹ️ Skipped role update because status not successful or customerRef missing");
     }
 
     // 3. تسجيل في payment_logs
