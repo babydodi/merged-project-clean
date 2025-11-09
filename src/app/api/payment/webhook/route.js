@@ -40,16 +40,19 @@ export async function POST(req) {
       raw_payload: body
     }]);
 
-    if (txStatus !== 'PAID') {
+    // نقبل SUCCESS أو PAID كحالات دفع ناجحة
+    if (!['SUCCESS', 'PAID'].includes(txStatus)) {
       return new Response('ignored', { status: 200 });
     }
 
     // تحقق إضافي من MyFatoorah
     const statusResp = await getPaymentStatus(invoiceId);
     const isSuccess = statusResp?.IsSuccess === true;
-    const invoiceStatus = statusResp?.Data?.InvoiceStatus ?? statusResp?.Data?.TransactionStatus ?? null;
+    const invoiceStatus = String(
+      statusResp?.Data?.InvoiceStatus ?? statusResp?.Data?.TransactionStatus ?? ''
+    ).toUpperCase();
 
-    if (!isSuccess || String(invoiceStatus).toUpperCase() !== 'PAID') {
+    if (!isSuccess || !['SUCCESS', 'PAID'].includes(invoiceStatus)) {
       await supabase.from('payment_logs').insert([{
         invoice_id: Number(invoiceId),
         customer_reference: customerRef,
@@ -61,15 +64,16 @@ export async function POST(req) {
       return new Response('verification_failed', { status: 200 });
     }
 
-    // جهّز بيانات الاشتراك (50 يوم)
+    // جهّز بيانات الاشتراك (ثابت: 50 يوم)
+    const plan = data?.UserDefinedField ?? 'basic';
     const startDate = new Date();
     const endDate = new Date(startDate);
     endDate.setDate(startDate.getDate() + 50);
 
     const insertPayload = {
       user_id: customerRef,
-      plan: data?.UserDefinedField ?? null,
-      invoice_id: Number(invoiceId), // ✅ رقم وليس نص
+      plan,
+      invoice_id: Number(invoiceId),
       customer_email: data?.CustomerEmail ?? null,
       amount: Number(
         data?.InvoiceValueInPayCurrency ??
