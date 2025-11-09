@@ -11,19 +11,23 @@ const supabase = createClient(
 export async function POST(req) {
   try {
     const payload = await req.json();
-    const invoiceId = payload?.InvoiceId;
-    const transactionStatus = payload?.TransactionStatus;
-    const customerRef = payload?.CustomerReference;
+    const data = payload?.Data || {};
+    const invoiceId = data?.InvoiceId;
+    const transactionStatus = data?.TransactionStatus;
+    const customerRef = data?.CustomerReference;
 
     console.log("🔔 Webhook received:", payload);
+
+    // نعتبر الدفع ناجح إذا الحالة SUCCESS أو PAID
+    const isPaid = ["SUCCESS", "PAID"].includes(transactionStatus);
 
     // 1. تحديث الاشتراك
     const { error: subErr } = await supabase
       .from("subscriptions")
       .update({
-        status: transactionStatus === "PAID" ? "active" : "failed",
-        is_active: transactionStatus === "PAID",
-        start_date: transactionStatus === "PAID" ? new Date().toISOString() : null,
+        status: isPaid ? "active" : "failed",
+        is_active: isPaid,
+        start_date: isPaid ? new Date().toISOString() : null,
       })
       .eq("invoice_id", invoiceId);
 
@@ -34,7 +38,7 @@ export async function POST(req) {
     }
 
     // 2. تحديث الدور
-    if (transactionStatus === "PAID" && customerRef) {
+    if (isPaid && customerRef) {
       const { error: roleErr } = await supabase
         .from("users")
         .update({ role: "subscriber" })
@@ -46,7 +50,7 @@ export async function POST(req) {
         console.log("✅ Role updated successfully for user:", customerRef);
       }
     } else {
-      console.log("ℹ️ Skipped role update because status is not PAID or customerRef missing");
+      console.log("ℹ️ Skipped role update because status not successful or customerRef missing");
     }
 
     // 3. تسجيل في payment_logs
