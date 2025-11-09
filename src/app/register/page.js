@@ -3,10 +3,9 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSupabaseClient } from '@supabase/auth-helpers-react';
-import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
-import { Label } from '../../components/ui/label';
-import { Checkbox } from '../../components/ui/checkbox';
+import { Button } from '../ui/button';
+import { Input } from '../ui/input';
+import { Label } from '../ui/label';
 import { createHoverSoundHandler } from '../../components/useHoverSound';
 
 export default function RegisterPage() {
@@ -70,22 +69,6 @@ export default function RegisterPage() {
       options: { redirectTo: `${location.origin}/api/auth/callback` },
     });
     if (error) console.log(error);
-    else {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const googleName = user.user_metadata?.full_name || user.user_metadata?.name;
-        await fetch('/api/auth/upsert-user', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: user.id,
-            email: user.email,
-            full_name: googleName,
-          }),
-        });
-        router.push('/dashboard');
-      }
-    }
   };
 
   return (
