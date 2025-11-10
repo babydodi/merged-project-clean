@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: #0F172A; /* خلفية داكنة */
+    --foreground: #F8F9FA; /* نص فاتح */
+    --primary: #2563EB;    /* زر أزرق */
+    --secondary: #1E293B;  /* لون ثانوي */
+    --card: #ffffff;       /* خلفية الفورم */
+    --card-foreground: #21242A;
+    --border: #e5e7eb;
+    --input: #f3f4f6;
+  }
+
+  .dark {
+    --background: #21242A;
+    --foreground: #F8F9FA;
+    --primary: #FA5A0A;
+    --secondary: #343A40;
+  }
+}
+
+body {
+  font-family: 'Tajawal', sans-serif;
+  @apply bg-background text-foreground;
+}
