@@ -1,40 +1,37 @@
-import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
+import { NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 
-export async function POST(req: Request) {
-  const supabase = createRouteHandlerClient({ cookies });
-  const payload = await req.json();
+export async function POST(req) {
+  const supabase = createRouteHandlerClient({ cookies })
+  const { id, email, full_name } = await req.json()
 
-  const { id, email, full_name } = payload || {};
   if (!id || !email) {
-    return NextResponse.json({ error: "Missing id or email" }, { status: 400 });
+    return NextResponse.json({ error: 'Missing id or email' }, { status: 400 })
   }
 
-  // تأكد من وجود جلسة مصادقة قبل الكتابة
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user || user.id !== id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // upsert في public.users
   const { data, error } = await supabase
-    .from("users")
+    .from('users')
     .upsert(
       {
-        id,              // نفس id من auth.users
-        email,           // فريد
+        id,
+        email,
         full_name: full_name ?? null,
-        role: "unsubscribed", // افتراضي. غيّره لاحقًا لو صار عنده اشتراك
+        role: 'unsubscribed',
       },
-      { onConflict: "email" } // يحترم unique(email)
+      { onConflict: 'email' }
     )
     .select()
-    .single();
+    .single()
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ ok: true, user: data });
+  return NextResponse.json({ ok: true, user: data })
 }
