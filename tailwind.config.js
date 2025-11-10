@@ -1,11 +1,11 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  darkMode: ["class"], // يدعم الوضع الداكن من emergent
+  darkMode: ["class"], // ضروري للوضع الداكن
   content: [
     './src/**/*.{js,jsx,ts,tsx}',
     './app/**/*.{js,jsx,ts,tsx}',
     './components/**/*.{js,jsx,ts,tsx}',
-    './pages/**/*.{js,jsx}', // إضافة من emergent
+    './pages/**/*.{js,jsx}', // من emergent
   ],
   theme: {
     container: {
@@ -16,8 +16,8 @@ module.exports = {
       },
     },
     extend: {
+      /* ألوانك الأساسية */
       colors: {
-        /* ألوانك الأساسية */
         primary: '#FA5A0A',
         secondary: '#21242A',
         'text-light': '#F8F9FA',
@@ -49,6 +49,13 @@ module.exports = {
           DEFAULT: 'hsl(var(--muted))',
           foreground: 'hsl(var(--muted-foreground))',
         },
+        chart: {
+          '1': 'hsl(var(--chart-1))',
+          '2': 'hsl(var(--chart-2))',
+          '3': 'hsl(var(--chart-3))',
+          '4': 'hsl(var(--chart-4))',
+          '5': 'hsl(var(--chart-5))',
+        },
         sidebar: {
           DEFAULT: 'hsl(var(--sidebar-background))',
           foreground: 'hsl(var(--sidebar-foreground))',
@@ -60,10 +67,14 @@ module.exports = {
           ring: 'hsl(var(--sidebar-ring))',
         },
       },
+
+      /* خطوطك */
       fontFamily: {
         tajawal: ['Tajawal', 'sans-serif'],
         minecraft: ['Minecraft', 'monospace'],
       },
+
+      /* إعدادات إضافية من emergent */
       borderRadius: {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
