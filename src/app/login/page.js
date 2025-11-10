@@ -1,118 +1,102 @@
-"use client";
+'use client'
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { Label } from "../../components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "../../components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "../../components/ui/dialog";
-import { Moon, Sun, Mail, Lock, User, Chrome } from "lucide-react";
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { Button } from '../../components/ui/buttonemerg'
+import { Input } from '../../components/ui/inpug'
+import { Label } from '../../components/ui/labek'
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../../components/ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../../components/ui/dialog'
+import { Moon, Sun, Mail, Lock, User, Chrome } from 'lucide-react'
 
 const LoginRegisterPage = () => {
-  const [theme, setTheme] = useState("light");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
-  const [resetEmail, setResetEmail] = useState("");
-  const [isResetOpen, setIsResetOpen] = useState(false);
-  const router = useRouter();
+  const [theme, setTheme] = useState('light')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [name, setName] = useState('')
+  const [resetEmail, setResetEmail] = useState('')
+  const [isResetOpen, setIsResetOpen] = useState(false)
+  const router = useRouter()
 
-  // Play click sound (defer to client runtime when called)
+  // Play click sound
   const playClickSound = () => {
-    if (typeof window === "undefined") return;
+    if (typeof window === 'undefined') return
     try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-      const audioContext = new AudioCtx();
-      const oscillator = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
-
-      oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-
-      oscillator.frequency.value = 800;
-      oscillator.type = "sine";
-
-      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-
-      oscillator.start(audioContext.currentTime);
-      oscillator.stop(audioContext.currentTime + 0.1);
+      const AudioCtx = window.AudioContext || window.webkitAudioContext
+      if (!AudioCtx) return
+      const audioContext = new AudioCtx()
+      const oscillator = audioContext.createOscillator()
+      const gainNode = audioContext.createGain()
+      
+      oscillator.connect(gainNode)
+      gainNode.connect(audioContext.destination)
+      
+      oscillator.frequency.value = 800
+      oscillator.type = 'sine'
+      
+      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1)
+      
+      oscillator.start(audioContext.currentTime)
+      oscillator.stop(audioContext.currentTime + 0.1)
     } catch (e) {
       // ignore audio errors
     }
-  };
+  }
 
   // Toggle theme
   const toggleTheme = () => {
-    playClickSound();
-    const newTheme = theme === "light" ? "dark" : "light";
-    setTheme(newTheme);
-    if (typeof document !== "undefined") {
-      document.documentElement.classList.toggle("dark");
+    playClickSound()
+    const newTheme = theme === 'light' ? 'dark' : 'light'
+    setTheme(newTheme)
+    if (typeof document !== 'undefined') {
+      document.documentElement.classList.toggle('dark')
     }
-  };
+  }
 
   // Handle login
   const handleLogin = (e) => {
-    e.preventDefault();
-    playClickSound();
-    // Placeholder - integrate Supabase or your API here
-    console.log("Login:", { email, password });
-    router.push("/dashboard");
-  };
+    e.preventDefault()
+    playClickSound()
+    // Placeholder - integrate your auth here
+    console.log('Login:', { email, password })
+    router.push('/dashboard')
+  }
 
   // Handle register
   const handleRegister = (e) => {
-    e.preventDefault();
-    playClickSound();
-    // Placeholder - integrate Supabase or your API here
-    console.log("Register:", { name, email, password });
-    router.push("/dashboard");
-  };
+    e.preventDefault()
+    playClickSound()
+    // Placeholder - integrate your auth here
+    console.log('Register:', { name, email, password })
+    router.push('/dashboard')
+  }
 
   // Handle Google login
   const handleGoogleLogin = () => {
-    playClickSound();
+    playClickSound()
     // Placeholder - integrate OAuth here
-    console.log("Google login");
-    router.push("/dashboard");
-  };
+    console.log('Google login')
+    router.push('/dashboard')
+  }
 
   // Handle password reset
   const handlePasswordReset = (e) => {
-    e.preventDefault();
-    playClickSound();
+    e.preventDefault()
+    playClickSound()
     // Placeholder - integrate reset flow here
-    console.log("Password reset for:", resetEmail);
-    setIsResetOpen(false);
-    setResetEmail("");
-  };
+    console.log('Password reset for:', resetEmail)
+    setIsResetOpen(false)
+    setResetEmail('')
+  }
 
-  // ensure theme class on mount matches state
   useEffect(() => {
-    if (typeof document !== "undefined") {
-      if (theme === "dark") document.documentElement.classList.add("dark");
-      else document.documentElement.classList.remove("dark");
+    if (typeof document !== 'undefined') {
+      if (theme === 'dark') document.documentElement.classList.add('dark')
+      else document.documentElement.classList.remove('dark')
     }
-  }, [theme]);
+  }, [theme])
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#FAF0CA] via-[#FFE8E7] to-[#FCF0F4] dark:from-[#0a0a0a] dark:via-[#102837] dark:to-[#1a1a1a] transition-all duration-500 p-4">
@@ -122,30 +106,31 @@ const LoginRegisterPage = () => {
         className="fixed top-6 right-6 p-3 rounded-full bg-white/80 dark:bg-[#102837]/80 backdrop-blur-sm shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110"
         aria-label="Toggle theme"
       >
-        {theme === "light" ? <Moon className="w-5 h-5 text-[#102837]" /> : <Sun className="w-5 h-5 text-[#FAF0CA]" />}
+        {theme === 'light' ? <Moon className="w-5 h-5 text-[#102837]" /> : <Sun className="w-5 h-5 text-[#FAF0CA]" />}
       </button>
 
       {/* Main Card */}
       <Card className="w-full max-w-md shadow-2xl border-0 bg-white/90 dark:bg-[#102837]/90 backdrop-blur-md">
         <CardHeader className="space-y-1 text-center pb-4">
-          <CardTitle className="text-3xl font-light tracking-tight text-[#102837] dark:text-[#E5E4E4]">Welcome</CardTitle>
+          <CardTitle className="text-3xl font-light tracking-tight text-[#102837] dark:text-[#E5E4E4]">
+            Welcome
+          </CardTitle>
           <CardDescription className="text-sm text-[#102837]/60 dark:text-[#E5E4E4]/60">
             Sign in to your account or create a new one
           </CardDescription>
         </CardHeader>
-
         <CardContent>
           <Tabs defaultValue="login" className="w-full">
             <TabsList className="grid w-full grid-cols-2 mb-6 bg-[#E5E4E4]/50 dark:bg-black/20">
-              <TabsTrigger
-                value="login"
+              <TabsTrigger 
+                value="login" 
                 onClick={playClickSound}
                 className="data-[state=active]:bg-white dark:data-[state=active]:bg-[#102837] data-[state=active]:text-[#102837] dark:data-[state=active]:text-[#FAF0CA] transition-all"
               >
                 Login
               </TabsTrigger>
-              <TabsTrigger
-                value="register"
+              <TabsTrigger 
+                value="register" 
                 onClick={playClickSound}
                 className="data-[state=active]:bg-white dark:data-[state=active]:bg-[#102837] data-[state=active]:text-[#102837] dark:data-[state=active]:text-[#FAF0CA] transition-all"
               >
@@ -173,7 +158,6 @@ const LoginRegisterPage = () => {
                     />
                   </div>
                 </div>
-
                 <div className="space-y-2">
                   <Label htmlFor="login-password" className="text-[#102837] dark:text-[#E5E4E4] font-light">
                     Password
@@ -208,7 +192,7 @@ const LoginRegisterPage = () => {
                     <DialogHeader>
                       <DialogTitle className="text-[#102837] dark:text-[#E5E4E4]">Reset Password</DialogTitle>
                       <DialogDescription className="text-[#102837]/60 dark:text-[#E5E4E4]/60">
-                        Enter your email address and we'll send you a reset link.
+                        Enter your email address and we&apos;ll send you a reset link.
                       </DialogDescription>
                     </DialogHeader>
 
@@ -339,7 +323,7 @@ const LoginRegisterPage = () => {
         </CardContent>
       </Card>
     </div>
-  );
-};
+  )
+}
 
-export default LoginRegisterPage;
+export default LoginRegisterPage
