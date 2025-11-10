@@ -2,9 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Button } from '../../components/ui/buttonemeg'
+import { Button } from '../../components/ui/buttonemerg'
 import { Input } from '../../components/ui/inpug'
-import '../login.css'
 import { Label } from '../../components/ui/labek'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../../components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs'
@@ -12,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Moon, Sun, Mail, Lock, User, Chrome } from 'lucide-react'
 
 const LoginRegisterPage = () => {
-  const [theme, setTheme] = useState('light')
+  const [theme, setTheme] = useState<'light' | 'dark'>('light')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
@@ -24,57 +23,65 @@ const LoginRegisterPage = () => {
   const playClickSound = () => {
     if (typeof window === 'undefined') return
     try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext
+      const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext
       if (!AudioCtx) return
       const audioContext = new AudioCtx()
       const oscillator = audioContext.createOscillator()
       const gainNode = audioContext.createGain()
-      
+
       oscillator.connect(gainNode)
       gainNode.connect(audioContext.destination)
-      
+
       oscillator.frequency.value = 800
       oscillator.type = 'sine'
-      
+
       gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
       gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1)
-      
+
       oscillator.start(audioContext.currentTime)
       oscillator.stop(audioContext.currentTime + 0.1)
-    } catch (e) {
+    } catch {
       // ignore audio errors
     }
   }
 
-  // Toggle theme
- const toggleTheme = () => {
-  playClickSound()
-  const newTheme = theme === 'light' ? 'dark' : 'light'
-  setTheme(newTheme)
-  if (typeof document !== 'undefined') {
-    if (newTheme === 'dark') {
-      document.documentElement.classList.add('dark')
-    } else {
-      document.documentElement.classList.remove('dark')
+  // Toggle theme (fixed to add/remove based on newTheme)
+  const toggleTheme = () => {
+    playClickSound()
+    const newTheme = theme === 'light' ? 'dark' : 'light'
+    setTheme(newTheme)
+
+    if (typeof document !== 'undefined') {
+      const root = document.documentElement
+      if (newTheme === 'dark') {
+        root.classList.add('dark')
+      } else {
+        root.classList.remove('dark')
+      }
     }
   }
-}
 
+  // Sync theme on mount and when theme state changes
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      const root = document.documentElement
+      if (theme === 'dark') root.classList.add('dark')
+      else root.classList.remove('dark')
+    }
+  }, [theme])
 
   // Handle login
-  const handleLogin = (e) => {
+  const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()
     playClickSound()
-    // Placeholder - integrate your auth here
     console.log('Login:', { email, password })
     router.push('/dashboard')
   }
 
   // Handle register
-  const handleRegister = (e) => {
+  const handleRegister = (e: React.FormEvent) => {
     e.preventDefault()
     playClickSound()
-    // Placeholder - integrate your auth here
     console.log('Register:', { name, email, password })
     router.push('/dashboard')
   }
@@ -82,27 +89,18 @@ const LoginRegisterPage = () => {
   // Handle Google login
   const handleGoogleLogin = () => {
     playClickSound()
-    // Placeholder - integrate OAuth here
     console.log('Google login')
     router.push('/dashboard')
   }
 
   // Handle password reset
-  const handlePasswordReset = (e) => {
+  const handlePasswordReset = (e: React.FormEvent) => {
     e.preventDefault()
     playClickSound()
-    // Placeholder - integrate reset flow here
     console.log('Password reset for:', resetEmail)
     setIsResetOpen(false)
     setResetEmail('')
   }
-
-  useEffect(() => {
-    if (typeof document !== 'undefined') {
-      if (theme === 'dark') document.documentElement.classList.add('dark')
-      else document.documentElement.classList.remove('dark')
-    }
-  }, [theme])
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#FAF0CA] via-[#FFE8E7] to-[#FCF0F4] dark:from-[#0a0a0a] dark:via-[#102837] dark:to-[#1a1a1a] transition-all duration-500 p-4">
@@ -125,18 +123,19 @@ const LoginRegisterPage = () => {
             Sign in to your account or create a new one
           </CardDescription>
         </CardHeader>
+
         <CardContent>
           <Tabs defaultValue="login" className="w-full">
             <TabsList className="grid w-full grid-cols-2 mb-6 bg-[#E5E4E4]/50 dark:bg-black/20">
-              <TabsTrigger 
-                value="login" 
+              <TabsTrigger
+                value="login"
                 onClick={playClickSound}
                 className="data-[state=active]:bg-white dark:data-[state=active]:bg-[#102837] data-[state=active]:text-[#102837] dark:data-[state=active]:text-[#FAF0CA] transition-all"
               >
                 Login
               </TabsTrigger>
-              <TabsTrigger 
-                value="register" 
+              <TabsTrigger
+                value="register"
                 onClick={playClickSound}
                 className="data-[state=active]:bg-white dark:data-[state=active]:bg-[#102837] data-[state=active]:text-[#102837] dark:data-[state=active]:text-[#FAF0CA] transition-all"
               >
@@ -164,6 +163,7 @@ const LoginRegisterPage = () => {
                     />
                   </div>
                 </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="login-password" className="text-[#102837] dark:text-[#E5E4E4] font-light">
                     Password
@@ -176,7 +176,7 @@ const LoginRegisterPage = () => {
                       placeholder="••••••••"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="pl-10 bg-[#E5E4E4]/30 dark:bg-black/20 border-[#102837]/20 dark:border-[#E5E4E4]/20 focus:border-[#102837] dark:focus:border-[#FAF0CA] text-[#102837] dark:text-[#E5E4E4] placeholder:text-[#102837]/40 dark:placeholder:text-[#E5E4E4]/40"
+                      className="pl-10 bg-[#E5E4E4]/30 dark:bg黑/20 border-[#102837]/20 dark:border-[#E5E4E4]/20 focus:border-[#102837] dark:focus:border-[#FAF0CA] text-[#102837] dark:text-[#E5E4E4] placeholder:text-[#102837]/40 dark:placeholder:text-[#E5E4E4]/40"
                       required
                     />
                   </div>
@@ -243,7 +243,7 @@ const LoginRegisterPage = () => {
                 </div>
               </div>
 
-              <Button type="button" variant="outline" onClick={handleGoogleLogin} className="w-full border-[#102837]/20 dark:border-[#E5E4E4]/20 hover:bg-[#E5E4E4]/50 dark:hover:bg-black/20 text-[#102837] dark:text-[#E5E4E4] transition-all duration-300 hover:scale-[1.02]">
+              <Button type="button" variant="outline" onClick={handleGoogleLogin} className="w-full border-[#102837]/20 dark:border-[#E5E4E4]/20 hover:bg-[#E5E4E4]/50 dark:hover:bg黑/20 text-[#102837] dark:text-[#E5E4E4] transition-all duration-300 hover:scale-[1.02]">
                 <Chrome className="mr-2 h-4 w-4" />
                 Google
               </Button>
@@ -312,7 +312,7 @@ const LoginRegisterPage = () => {
               </form>
 
               <div className="relative my-6">
-                <div className="absolute inset-0 flex items-center">
+                <div className="absolute inset-0 flex items中心">
                   <span className="w-full border-t border-[#102837]/20 dark:border-[#E5E4E4]/20" />
                 </div>
                 <div className="relative flex justify-center text-xs uppercase">
