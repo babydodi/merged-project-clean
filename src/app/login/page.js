@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Button } from '../../components/ui/buttonemg'
+import { Button } from '../../components/ui/buttonemeg'
 import { Input } from '../../components/ui/inpug'
 import { Label } from '../../components/ui/labek'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../../components/ui/card'
