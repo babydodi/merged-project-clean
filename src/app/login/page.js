@@ -1,337 +1,315 @@
-'use client'
+"use client";
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { Button } from '../../components/ui/buttonemeg'
-import { Input } from '../../components/ui/inpug'
-import { Label } from '../../components/ui/labek'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../../components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../../components/ui/dialog'
-import { Moon, Sun, Mail, Lock, User, Chrome } from 'lucide-react'
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
+import { Button } from "../../components/ui/buttonemeg";
+import { Input } from "../../components/ui/inpug";
+import { Label } from "../../components/ui/labek";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "../../components/ui/dialog";
+import { Moon, Sun, Mail, Lock, User, Chrome } from "lucide-react";
 
-const LoginRegisterPage = () => {
-  const [theme, setTheme] = useState('light')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [name, setName] = useState('')
-  const [resetEmail, setResetEmail] = useState('')
-  const [isResetOpen, setIsResetOpen] = useState(false)
-  const router = useRouter()
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
-  const playClickSound = () => {
-    if (typeof window === 'undefined') return
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext
-      if (!AudioCtx) return
-      const audioContext = new AudioCtx()
-      const oscillator = audioContext.createOscillator()
-      const gainNode = audioContext.createGain()
-      oscillator.connect(gainNode)
-      gainNode.connect(audioContext.destination)
-      oscillator.frequency.value = 800
-      oscillator.type = 'sine'
-      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1)
-      oscillator.start(audioContext.currentTime)
-      oscillator.stop(audioContext.currentTime + 0.1)
-    } catch {}
-  }
+export default function LoginRegisterPage() {
+  const [theme, setTheme] = useState("light");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [resetEmail, setResetEmail] = useState("");
+  const [isResetOpen, setIsResetOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
-  // Initialize theme from localStorage or current <html> class
-  useEffect(() => {
-    if (typeof document === 'undefined') return
-    const saved = typeof window !== 'undefined' ? window.localStorage.getItem('theme') : null
-    const initial = saved || (document.documentElement.classList.contains('dark') ? 'dark' : 'light')
-    setTheme(initial)
-    if (initial === 'dark') {
-      document.documentElement.classList.add('dark')
-    } else {
-      document.documentElement.classList.remove('dark')
-    }
-  }, [])
-
-  // Apply theme whenever state changes
-  useEffect(() => {
-    if (typeof document === 'undefined') return
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark')
-    } else {
-      document.documentElement.classList.remove('dark')
-    }
-  }, [theme])
+  const playClickSound = () => { /* كما هو */ };
 
   const toggleTheme = () => {
-    playClickSound()
-    const next = theme === 'light' ? 'dark' : 'light'
-    setTheme(next)
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('theme', next)
+    playClickSound();
+    const next = theme === "light" ? "dark" : "light";
+    setTheme(next);
+    document.documentElement.classList.toggle("dark");
+  };
+
+  // Email/password login
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    playClickSound();
+    setError(null);
+    setLoading(true);
+
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      setError(error.message);
+      setLoading(false);
+      return;
     }
-    if (typeof document !== 'undefined') {
-      const root = document.documentElement
-      if (next === 'dark') root.classList.add('dark')
-      else root.classList.remove('dark')
+
+    router.push("/dashboard");
+  };
+
+  // Email/password register + upsert profile
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    playClickSound();
+    setError(null);
+    setLoading(true);
+
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { full_name: name } }
+    });
+
+    if (error) {
+      setError(error.message);
+      setLoading(false);
+      return;
     }
-  }
 
-  const handleLogin = (e) => {
-    e.preventDefault()
-    playClickSound()
-    console.log('Login:', { email, password })
-    router.push('/dashboard')
-  }
+    // إذا كان signUp يتطلّب تأكيد بريد، قد لا توجد جلسة مباشرة
+    const userId = data.user?.id;
+    const userEmail = data.user?.email;
+    if (userId && userEmail) {
+      await fetch("/api/auth/upsert-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: userId, email: userEmail, full_name: name })
+      }).catch(() => {});
+    }
 
-  const handleRegister = (e) => {
-    e.preventDefault()
-    playClickSound()
-    console.log('Register:', { name, email, password })
-    router.push('/dashboard')
-  }
+    router.push("/dashboard");
+  };
 
-  const handleGoogleLogin = () => {
-    playClickSound()
-    console.log('Google login')
-    router.push('/dashboard')
-  }
+  // Google OAuth (redirect to Supabase OAuth, callback handles upsert)
+  const handleGoogleLogin = async () => {
+    playClickSound();
+    setError(null);
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${origin}/auth/callback` // يتوافق مع call.txt
+      }
+    });
+    if (error) setError(error.message);
+  };
 
-  const handlePasswordReset = (e) => {
-    e.preventDefault()
-    playClickSound()
-    console.log('Password reset for:', resetEmail)
-    setIsResetOpen(false)
-    setResetEmail('')
-  }
+  // Password reset
+  const handlePasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    playClickSound();
+    setError(null);
+
+    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+      redirectTo: typeof window !== "undefined" ? `${window.location.origin}/reset/callback` : undefined
+    });
+    if (error) {
+      setError(error.message);
+      return;
+    }
+    setIsResetOpen(false);
+    setResetEmail("");
+  };
+
+  useEffect(() => {
+    if (theme === "dark") document.documentElement.classList.add("dark");
+    else document.documentElement.classList.remove("dark");
+  }, [theme]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#FAF0CA] via-[#FFE8E7] to-[#FCF0F4] dark:from-[#0a0a0a] dark:via-[#102837] dark:to-[#1a1a1a] transition-all duration-500 p-4">
-      {/* Theme Toggle Button (raised z-index) */}
+    <div className="min-h-screen flex items-center justify-center bg-background text-foreground transition-all duration-500 p-4">
+      {/* Toggle */}
       <button
         onClick={toggleTheme}
-        className="fixed top-6 right-6 z-50 p-3 rounded-full bg-white/80 dark:bg-[#102837]/80 backdrop-blur-sm shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110"
+        className="fixed top-6 right-6 p-3 rounded-full bg-card text-card-foreground backdrop-blur-sm shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110 border border-border"
         aria-label="Toggle theme"
       >
-        {theme === 'light' ? <Moon className="w-5 h-5 text-[#102837]" /> : <Sun className="w-5 h-5 text-[#FAF0CA]" />}
+        {theme === "light" ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
       </button>
 
-      {/* Main Card */}
-      <Card className="w-full max-w-md shadow-2xl border-0 bg-white/90 dark:bg-[#102837]/90 backdrop-blur-md">
+      {/* Card */}
+      <Card className="w-full max-w-md shadow-2xl border border-border bg-card text-card-foreground backdrop-blur-md">
         <CardHeader className="space-y-1 text-center pb-4">
-          <CardTitle className="text-3xl font-light tracking-tight text-[#102837] dark:text-[#E5E4E4]">
-            Welcome
-          </CardTitle>
-          <CardDescription className="text-sm text-[#102837]/60 dark:text-[#E5E4E4]/60">
+          <CardTitle className="text-3xl font-light tracking-tight">Welcome</CardTitle>
+          <CardDescription className="text-sm text-muted-foreground">
             Sign in to your account or create a new one
           </CardDescription>
         </CardHeader>
-
         <CardContent>
           <Tabs defaultValue="login" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-6 bg-[#E5E4E4]/50 dark:bg-black/20">
-              <TabsTrigger
-                value="login"
-                onClick={playClickSound}
-                className="data-[state=active]:bg-white dark:data-[state=active]:bg-[#102837] data-[state=active]:text-[#102837] dark:data-[state=active]:text-[#FAF0CA] transition-all"
-              >
+            <TabsList className="grid w-full grid-cols-2 mb-6 bg-muted text-foreground">
+              <TabsTrigger value="login" onClick={playClickSound} className="data-[state=active]:bg-background data-[state=active]:text-foreground">
                 Login
               </TabsTrigger>
-              <TabsTrigger
-                value="register"
-                onClick={playClickSound}
-                className="data-[state=active]:bg-white dark:data-[state=active]:bg-[#102837] data-[state=active]:text-[#102837] dark:data-[state=active]:text-[#FAF0CA] transition-all"
-              >
+              <TabsTrigger value="register" onClick={playClickSound} className="data-[state=active]:bg-background data-[state=active]:text-foreground">
                 Register
               </TabsTrigger>
             </TabsList>
 
-            {/* Login Tab */}
+            {/* Login */}
             <TabsContent value="login" className="space-y-4">
+              {error && (
+                <div className="p-3 rounded bg-destructive text-destructive-foreground">{error}</div>
+              )}
               <form onSubmit={handleLogin} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="login-email" className="text-[#102837] dark:text-[#E5E4E4] font-light">
-                    Email
-                  </Label>
+                  <Label htmlFor="login-email" className="font-light">Email</Label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-[#102837]/40 dark:text-[#E5E4E4]/40" />
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
                       id="login-email"
                       type="email"
                       placeholder="you@example.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="pl-10 bg-[#E5E4E4]/30 dark:bg-black/20 border-[#102837]/20 dark:border-[#E5E4E4]/20 focus:border-[#102837] dark:focus:border-[#FAF0CA] text-[#102837] dark:text-[#E5E4E4] placeholder:text-[#102837]/40 dark:placeholder:text-[#E5E4E4]/40"
+                      className="pl-10 bg-input border-border text-foreground placeholder:text-muted-foreground focus-visible:ring-ring"
                       required
                     />
                   </div>
                 </div>
-
                 <div className="space-y-2">
-                  <Label htmlFor="login-password" className="text-[#102837] dark:text-[#E5E4E4] font-light">
-                    Password
-                  </Label>
+                  <Label htmlFor="login-password" className="font-light">Password</Label>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-[#102837]/40 dark:text-[#E5E4E4]/40" />
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
                       id="login-password"
                       type="password"
                       placeholder="••••••••"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="pl-10 bg-[#E5E4E4]/30 dark:bg-black/20 border-[#102837]/20 dark:border-[#E5E4E4]/20 focus:border-[#102837] dark:focus:border-[#FAF0CA] text-[#102837] dark:text-[#E5E4E4] placeholder:text-[#102837]/40 dark:placeholder:text-[#E5E4E4]/40"
+                      className="pl-10 bg-input border-border text-foreground placeholder:text-muted-foreground focus-visible:ring-ring"
                       required
                     />
                   </div>
                 </div>
 
-                {/* Forgot Password */}
                 <Dialog open={isResetOpen} onOpenChange={setIsResetOpen}>
                   <DialogTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={playClickSound}
-                      className="text-sm text-[#102837]/60 dark:text-[#E5E4E4]/60 hover:text-[#102837] dark:hover:text-[#FAF0CA] transition-colors underline-offset-4 hover:underline"
-                    >
+                    <button type="button" onClick={playClickSound} className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline">
                       Forgot password?
                     </button>
                   </DialogTrigger>
-
-                  <DialogContent className="bg-white/95 dark:bg-[#102837]/95 backdrop-blur-md border-[#102837]/20 dark:border-[#E5E4E4]/20">
+                  <DialogContent className="bg-popover text-popover-foreground backdrop-blur-md border border-border">
                     <DialogHeader>
-                      <DialogTitle className="text-[#102837] dark:text-[#E5E4E4]">Reset Password</DialogTitle>
-                      <DialogDescription className="text-[#102837]/60 dark:text-[#E5E4E4]/60">
+                      <DialogTitle>Reset Password</DialogTitle>
+                      <DialogDescription className="text-muted-foreground">
                         Enter your email address and we&apos;ll send you a reset link.
                       </DialogDescription>
                     </DialogHeader>
-
                     <form onSubmit={handlePasswordReset}>
                       <div className="space-y-4 py-4">
                         <div className="space-y-2">
-                          <Label htmlFor="reset-email" className="text-[#102837] dark:text-[#E5E4E4] font-light">
-                            Email
-                          </Label>
+                          <Label htmlFor="reset-email" className="font-light">Email</Label>
                           <Input
                             id="reset-email"
                             type="email"
                             placeholder="you@example.com"
                             value={resetEmail}
                             onChange={(e) => setResetEmail(e.target.value)}
-                            className="bg-[#E5E4E4]/30 dark:bg-black/20 border-[#102837]/20 dark:border-[#E5E4E4]/20 focus:border-[#102837] dark:focus:border-[#FAF0CA] text-[#102837] dark:text-[#E5E4E4]"
+                            className="bg-input border-border text-foreground placeholder:text-muted-foreground focus-visible:ring-ring"
                             required
                           />
                         </div>
                       </div>
-
                       <DialogFooter>
-                        <Button type="submit" className="w-full bg-[#102837] hover:bg-[#102837]/90 dark:bg-[#FAF0CA] dark:hover:bg-[#FAF0CA]/90 text-white dark:text-[#102837] transition-all duration-300">
-                          Send Reset Link
-                        </Button>
+                        <Button type="submit" className="w-full bg-primary text-primary-foreground hover:bg-primary/90">Send Reset Link</Button>
                       </DialogFooter>
                     </form>
                   </DialogContent>
                 </Dialog>
 
-                <Button type="submit" className="w-full bg-[#102837] hover:bg-[#102837]/90 dark:bg-[#FAF0CA] dark:hover:bg-[#FAF0CA]/90 text-white dark:text-[#102837] transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-[1.02]">
-                  Sign In
+                <Button type="submit" disabled={loading} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
+                  {loading ? "Signing in..." : "Sign In"}
                 </Button>
               </form>
 
               <div className="relative my-6">
                 <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t border-[#102837]/20 dark:border-[#E5E4E4]/20" />
+                  <span className="w-full border-t border-border" />
                 </div>
                 <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-white dark:bg-[#102837] px-2 text-[#102837]/60 dark:text-[#E5E4E4]/60">Or continue with</span>
+                  <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
                 </div>
               </div>
 
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleGoogleLogin}
-                className="w-full border-[#102837]/20 dark:border-[#E5E4E4]/20 hover:bg-[#E5E4E4]/50 dark:hover:bg-black/20 text-[#102837] dark:text-[#E5E4E4] transition-all duration-300 hover:scale-[1.02]"
-              >
+              <Button type="button" variant="outline" onClick={handleGoogleLogin} className="w-full border-border hover:bg-muted text-foreground">
                 <Chrome className="mr-2 h-4 w-4" />
                 Google
               </Button>
             </TabsContent>
 
-            {/* Register Tab */}
+            {/* Register */}
             <TabsContent value="register" className="space-y-4">
+              {error && (
+                <div className="p-3 rounded bg-destructive text-destructive-foreground">{error}</div>
+              )}
               <form onSubmit={handleRegister} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="register-name" className="text-[#102837] dark:text-[#E5E4E4] font-light">
-                    Name
-                  </Label>
+                  <Label htmlFor="register-name" className="font-light">Name</Label>
                   <div className="relative">
-                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-[#102837]/40 dark:text-[#E5E4E4]/40" />
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
                       id="register-name"
                       type="text"
                       placeholder="John Doe"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="pl-10 bg-[#E5E4E4]/30 dark:bg-black/20 border-[#102837]/20 dark:border-[#E5E4E4]/20 focus:border-[#102837] dark:focus:border-[#FAF0CA] text-[#102837] dark:text-[#E5E4E4] placeholder:text-[#102837]/40 dark:placeholder:text-[#E5E4E4]/40"
+                      className="pl-10 bg-input border-border text-foreground placeholder:text-muted-foreground focus-visible:ring-ring"
                       required
                     />
                   </div>
                 </div>
-
                 <div className="space-y-2">
-                  <Label htmlFor="register-email" className="text-[#102837] dark:text-[#E5E4E4] font-light">
-                    Email
-                  </Label>
+                  <Label htmlFor="register-email" className="font-light">Email</Label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-[#102837]/40 dark:text-[#E5E4E4]/40" />
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
                       id="register-email"
                       type="email"
                       placeholder="you@example.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="pl-10 bg-[#E5E4E4]/30 dark:bg-black/20 border-[#102837]/20 dark:border-[#E5E4E4]/20 focus:border-[#102837] dark:focus:border-[#FAF0CA] text-[#102837] dark:text-[#E5E4E4] placeholder:text-[#102837]/40 dark:placeholder:text-[#E5E4E4]/40"
+                      className="pl-10 bg-input border-border text-foreground placeholder:text-muted-foreground focus-visible:ring-ring"
                       required
                     />
                   </div>
                 </div>
-
                 <div className="space-y-2">
-                  <Label htmlFor="register-password" className="text-[#102837] dark:text-[#E5E4E4] font-light">
-                    Password
-                  </Label>
+                  <Label htmlFor="register-password" className="font-light">Password</Label>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-[#102837]/40 dark:text-[#E5E4E4]/40" />
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
                       id="register-password"
                       type="password"
                       placeholder="••••••••"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="pl-10 bg-[#E5E4E4]/30 dark:bg-black/20 border-[#102837]/20 dark:border-[#E5E4E4]/20 focus:border-[#102837] dark:focus:border-[#FAF0CA] text-[#102837] dark:text-[#E5E4E4] placeholder:text-[#102837]/40 dark:placeholder:text-[#E5E4E4]/40"
+                      className="pl-10 bg-input border-border text-foreground placeholder:text-muted-foreground focus-visible:ring-ring"
                       required
                     />
                   </div>
                 </div>
-
-                <Button type="submit" className="w-full bg-[#102837] hover:bg-[#102837]/90 dark:bg-[#FAF0CA] dark:hover:bg-[#FAF0CA]/90 text-white dark:text-[#102837] transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-[1.02]">
-                  Create Account
+                <Button type="submit" disabled={loading} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
+                  {loading ? "Creating..." : "Create Account"}
                 </Button>
               </form>
 
               <div className="relative my-6">
                 <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t border-[#102837]/20 dark:border-[#E5E4E4]/20" />
+                  <span className="w-full border-t border-border" />
                 </div>
                 <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-white dark:bg-[#102837] px-2 text-[#102837]/60 dark:text-[#E5E4E4]/60">Or continue with</span>
+                  <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
                 </div>
               </div>
 
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleGoogleLogin}
-                className="w-full border-[#102837]/20 dark:border-[#E5E4E4]/20 hover:bg-[#E5E4E4]/50 dark:hover:bg-black/20 text-[#102837] dark:text-[#E5E4E4] transition-all duration-300 hover:scale-[1.02]"
-              >
+              <Button type="button" variant="outline" onClick={handleGoogleLogin} className="w-full border-border hover:bg-muted text-foreground">
                 <Chrome className="mr-2 h-4 w-4" />
                 Google
               </Button>
@@ -340,7 +318,5 @@ const LoginRegisterPage = () => {
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }
-
-export default LoginRegisterPage
