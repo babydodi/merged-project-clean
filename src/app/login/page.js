@@ -11,12 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/ta
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../../components/ui/dialog'
 import { Moon, Sun, Mail, Lock, User, Chrome } from 'lucide-react'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-if (!supabaseUrl || !supabaseAnon) {
-  throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local')
-}
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
 const supabase = createClient(supabaseUrl, supabaseAnon)
 
@@ -30,6 +26,15 @@ export default function LoginRegisterPage() {
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
   const router = useRouter()
+
+  const [envWarning, setEnvWarning] = useState(null)
+
+  useEffect(() => {
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      setEnvWarning('Missing Supabase env variables. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local')
+      // ما نكسر الصفحة؛ نخليها تشتغل UI فقط
+    }
+  }, [])
 
   const playClickSound = () => {
     if (typeof window === 'undefined') return
@@ -64,6 +69,13 @@ export default function LoginRegisterPage() {
     playClickSound()
     setError(null)
     setLoading(true)
+
+    if (!supabaseUrl || !supabaseAnon) {
+      setError('Supabase is not configured')
+      setLoading(false)
+      return
+    }
+
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
       setError(error.message)
@@ -78,6 +90,13 @@ export default function LoginRegisterPage() {
     playClickSound()
     setError(null)
     setLoading(true)
+
+    if (!supabaseUrl || !supabaseAnon) {
+      setError('Supabase is not configured')
+      setLoading(false)
+      return
+    }
+
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -88,21 +107,32 @@ export default function LoginRegisterPage() {
       setLoading(false)
       return
     }
+
     const userId = data?.user?.id
     const userEmail = data?.user?.email
     if (userId && userEmail) {
-      await fetch('/api/auth/upsert-user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: userId, email: userEmail, full_name: name })
-      }).catch(() => {})
+      // لا نكسر الصفحة لو فشل upsert
+      try {
+        await fetch('/api/auth/upsert-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: userId, email: userEmail, full_name: name })
+        })
+      } catch {}
     }
+
     router.push('/dashboard')
   }
 
   const handleGoogleLogin = async () => {
     playClickSound()
     setError(null)
+
+    if (!supabaseUrl || !supabaseAnon) {
+      setError('Supabase is not configured')
+      return
+    }
+
     const origin = typeof window !== 'undefined' ? window.location.origin : ''
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -115,6 +145,12 @@ export default function LoginRegisterPage() {
     e.preventDefault()
     playClickSound()
     setError(null)
+
+    if (!supabaseUrl || !supabaseAnon) {
+      setError('Supabase is not configured')
+      return
+    }
+
     const origin = typeof window !== 'undefined' ? window.location.origin : ''
     const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
       redirectTo: `${origin}/reset/callback`
@@ -152,6 +188,12 @@ export default function LoginRegisterPage() {
         </CardHeader>
 
         <CardContent>
+          {envWarning && (
+            <div className="mb-4 p-3 rounded bg-destructive text-destructive-foreground">
+              {envWarning}
+            </div>
+          )}
+
           <Tabs defaultValue="login" className="w-full">
             <TabsList className="grid w-full grid-cols-2 mb-6 bg-muted text-foreground">
               <TabsTrigger value="login" onClick={playClickSound} className="data-[state=active]:bg-background data-[state=active]:text-foreground">
@@ -162,6 +204,7 @@ export default function LoginRegisterPage() {
               </TabsTrigger>
             </TabsList>
 
+            {/* Login */}
             <TabsContent value="login" className="space-y-4">
               {error && <div className="p-3 rounded bg-destructive text-destructive-foreground">{error}</div>}
               <form onSubmit={handleLogin} className="space-y-4">
@@ -253,6 +296,7 @@ export default function LoginRegisterPage() {
               </Button>
             </TabsContent>
 
+            {/* Register */}
             <TabsContent value="register" className="space-y-4">
               {error && <div className="p-3 rounded bg-destructive text-destructive-foreground">{error}</div>}
               <form onSubmit={handleRegister} className="space-y-4">
