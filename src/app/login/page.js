@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Moon, Sun, Mail, Lock, User, Chrome } from 'lucide-react'
 
 const LoginRegisterPage = () => {
-  const [theme, setTheme] = useState<'light' | 'dark'>('light')
+  const [theme, setTheme] = useState('light')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
@@ -19,11 +19,11 @@ const LoginRegisterPage = () => {
   const [isResetOpen, setIsResetOpen] = useState(false)
   const router = useRouter()
 
-  // Play click sound
+  // Play click sound (JSX-safe)
   const playClickSound = () => {
     if (typeof window === 'undefined') return
     try {
-      const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext
+      const AudioCtx = window.AudioContext || window.webkitAudioContext
       if (!AudioCtx) return
       const audioContext = new AudioCtx()
       const oscillator = audioContext.createOscillator()
@@ -40,7 +40,7 @@ const LoginRegisterPage = () => {
 
       oscillator.start(audioContext.currentTime)
       oscillator.stop(audioContext.currentTime + 0.1)
-    } catch {
+    } catch (e) {
       // ignore audio errors
     }
   }
@@ -61,7 +61,7 @@ const LoginRegisterPage = () => {
     }
   }
 
-  // Sync theme on mount and when theme state changes
+  // Sync theme on mount and when theme changes
   useEffect(() => {
     if (typeof document !== 'undefined') {
       const root = document.documentElement
@@ -71,7 +71,7 @@ const LoginRegisterPage = () => {
   }, [theme])
 
   // Handle login
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = (e) => {
     e.preventDefault()
     playClickSound()
     console.log('Login:', { email, password })
@@ -79,7 +79,7 @@ const LoginRegisterPage = () => {
   }
 
   // Handle register
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = (e) => {
     e.preventDefault()
     playClickSound()
     console.log('Register:', { name, email, password })
@@ -94,7 +94,7 @@ const LoginRegisterPage = () => {
   }
 
   // Handle password reset
-  const handlePasswordReset = (e: React.FormEvent) => {
+  const handlePasswordReset = (e) => {
     e.preventDefault()
     playClickSound()
     console.log('Password reset for:', resetEmail)
@@ -176,7 +176,7 @@ const LoginRegisterPage = () => {
                       placeholder="••••••••"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="pl-10 bg-[#E5E4E4]/30 dark:bg黑/20 border-[#102837]/20 dark:border-[#E5E4E4]/20 focus:border-[#102837] dark:focus:border-[#FAF0CA] text-[#102837] dark:text-[#E5E4E4] placeholder:text-[#102837]/40 dark:placeholder:text-[#E5E4E4]/40"
+                      className="pl-10 bg-[#E5E4E4]/30 dark:bg-black/20 border-[#102837]/20 dark:border-[#E5E4E4]/20 focus:border-[#102837] dark:focus:border-[#FAF0CA] text-[#102837] dark:text-[#E5E4E4] placeholder:text-[#102837]/40 dark:placeholder:text-[#E5E4E4]/40"
                       required
                     />
                   </div>
@@ -243,7 +243,12 @@ const LoginRegisterPage = () => {
                 </div>
               </div>
 
-              <Button type="button" variant="outline" onClick={handleGoogleLogin} className="w-full border-[#102837]/20 dark:border-[#E5E4E4]/20 hover:bg-[#E5E4E4]/50 dark:hover:bg黑/20 text-[#102837] dark:text-[#E5E4E4] transition-all duration-300 hover:scale-[1.02]">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleGoogleLogin}
+                className="w-full border-[#102837]/20 dark:border-[#E5E4E4]/20 hover:bg-[#E5E4E4]/50 dark:hover:bg-black/20 text-[#102837] dark:text-[#E5E4E4] transition-all duration-300 hover:scale-[1.02]"
+              >
                 <Chrome className="mr-2 h-4 w-4" />
                 Google
               </Button>
@@ -312,7 +317,7 @@ const LoginRegisterPage = () => {
               </form>
 
               <div className="relative my-6">
-                <div className="absolute inset-0 flex items中心">
+                <div className="absolute inset-0 flex items-center">
                   <span className="w-full border-t border-[#102837]/20 dark:border-[#E5E4E4]/20" />
                 </div>
                 <div className="relative flex justify-center text-xs uppercase">
@@ -320,7 +325,12 @@ const LoginRegisterPage = () => {
                 </div>
               </div>
 
-              <Button type="button" variant="outline" onClick={handleGoogleLogin} className="w-full border-[#102837]/20 dark:border-[#E5E4E4]/20 hover:bg-[#E5E4E4]/50 dark:hover:bg-black/20 text-[#102837] dark:text-[#E5E4E4] transition-all duration-300 hover:scale-[1.02]">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleGoogleLogin}
+                className="w-full border-[#102837]/20 dark:border-[#E5E4E4]/20 hover:bg-[#E5E4E4]/50 dark:hover:bg-black/20 text-[#102837] dark:text-[#E5E4E4] transition-all duration-300 hover:scale-[1.02]"
+              >
                 <Chrome className="mr-2 h-4 w-4" />
                 Google
               </Button>
