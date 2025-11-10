@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Button } from '../../components/ui/buttonemeg'
+import { Button } from '../../components/ui/buttonemerg'
 import { Input } from '../../components/ui/inpug'
 import { Label } from '../../components/ui/labek'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../../components/ui/card'
@@ -19,7 +19,6 @@ const LoginRegisterPage = () => {
   const [isResetOpen, setIsResetOpen] = useState(false)
   const router = useRouter()
 
-  // Play click sound (JSX-safe)
   const playClickSound = () => {
     if (typeof window === 'undefined') return
     try {
@@ -28,49 +27,54 @@ const LoginRegisterPage = () => {
       const audioContext = new AudioCtx()
       const oscillator = audioContext.createOscillator()
       const gainNode = audioContext.createGain()
-
       oscillator.connect(gainNode)
       gainNode.connect(audioContext.destination)
-
       oscillator.frequency.value = 800
       oscillator.type = 'sine'
-
       gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
       gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1)
-
       oscillator.start(audioContext.currentTime)
       oscillator.stop(audioContext.currentTime + 0.1)
-    } catch (e) {
-      // ignore audio errors
-    }
+    } catch {}
   }
 
-  // Toggle theme (fixed to add/remove based on newTheme)
-  const toggleTheme = () => {
-    playClickSound()
-    const newTheme = theme === 'light' ? 'dark' : 'light'
-    setTheme(newTheme)
-
-    if (typeof document !== 'undefined') {
-      const root = document.documentElement
-      if (newTheme === 'dark') {
-        root.classList.add('dark')
-      } else {
-        root.classList.remove('dark')
-      }
-    }
-  }
-
-  // Sync theme on mount and when theme changes
+  // Initialize theme from localStorage or current <html> class
   useEffect(() => {
-    if (typeof document !== 'undefined') {
-      const root = document.documentElement
-      if (theme === 'dark') root.classList.add('dark')
-      else root.classList.remove('dark')
+    if (typeof document === 'undefined') return
+    const saved = typeof window !== 'undefined' ? window.localStorage.getItem('theme') : null
+    const initial = saved || (document.documentElement.classList.contains('dark') ? 'dark' : 'light')
+    setTheme(initial)
+    if (initial === 'dark') {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
+  }, [])
+
+  // Apply theme whenever state changes
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
     }
   }, [theme])
 
-  // Handle login
+  const toggleTheme = () => {
+    playClickSound()
+    const next = theme === 'light' ? 'dark' : 'light'
+    setTheme(next)
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('theme', next)
+    }
+    if (typeof document !== 'undefined') {
+      const root = document.documentElement
+      if (next === 'dark') root.classList.add('dark')
+      else root.classList.remove('dark')
+    }
+  }
+
   const handleLogin = (e) => {
     e.preventDefault()
     playClickSound()
@@ -78,7 +82,6 @@ const LoginRegisterPage = () => {
     router.push('/dashboard')
   }
 
-  // Handle register
   const handleRegister = (e) => {
     e.preventDefault()
     playClickSound()
@@ -86,14 +89,12 @@ const LoginRegisterPage = () => {
     router.push('/dashboard')
   }
 
-  // Handle Google login
   const handleGoogleLogin = () => {
     playClickSound()
     console.log('Google login')
     router.push('/dashboard')
   }
 
-  // Handle password reset
   const handlePasswordReset = (e) => {
     e.preventDefault()
     playClickSound()
@@ -104,10 +105,10 @@ const LoginRegisterPage = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#FAF0CA] via-[#FFE8E7] to-[#FCF0F4] dark:from-[#0a0a0a] dark:via-[#102837] dark:to-[#1a1a1a] transition-all duration-500 p-4">
-      {/* Theme Toggle Button */}
+      {/* Theme Toggle Button (raised z-index) */}
       <button
         onClick={toggleTheme}
-        className="fixed top-6 right-6 p-3 rounded-full bg-white/80 dark:bg-[#102837]/80 backdrop-blur-sm shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110"
+        className="fixed top-6 right-6 z-50 p-3 rounded-full bg-white/80 dark:bg-[#102837]/80 backdrop-blur-sm shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110"
         aria-label="Toggle theme"
       >
         {theme === 'light' ? <Moon className="w-5 h-5 text-[#102837]" /> : <Sun className="w-5 h-5 text-[#FAF0CA]" />}
