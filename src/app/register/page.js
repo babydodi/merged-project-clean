@@ -1,79 +1,58 @@
-'use client';
-
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { useSupabaseClient } from '@supabase/auth-helpers-react';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
+import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
 import { createHoverSoundHandler } from '../../components/useHoverSound';
 
-export default function RegisterPage() {
-  const router = useRouter();
-  const supabase = useSupabaseClient();
-  const playHoverSound = createHoverSoundHandler();
-
+export const RegisterPage = () => {
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
-  const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Hover sound handler
+  const playHoverSound = createHoverSoundHandler();
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
-    if (password !== confirmPassword) {
-      setError('كلمتا المرور غير متطابقتين');
+    // Validate email
+    if (!email || !email.includes('@')) {
+      setError('Please enter a valid email address');
       return;
     }
+
+    // Validate password length
     if (password.length < 6) {
-      setError('كلمة المرور يجب أن تكون 6 أحرف على الأقل');
+      setError('Password must be at least 6 characters');
+      return;
+    }
+
+    // Validate passwords match
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
       return;
     }
 
     setIsLoading(true);
 
-    const { data, error: signUpError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: `${location.origin}/api/auth/callback`,
-        data: { full_name: fullName },
-      },
-    });
-
-    setIsLoading(false);
-
-    if (signUpError) {
-      setError(signUpError.message);
-    } else {
-      const user = data.user;
-      await fetch('/api/auth/upsert-user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: user.id,
-          email: user.email,
-          full_name: fullName,
-        }),
-      });
-      router.push('/login?message=registration_success');
-    }
-  };
-
-  const handleGoogleRegister = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${location.origin}/api/auth/callback` },
-    });
-    if (error) console.log(error);
+    // Simulate API call
+    setTimeout(() => {
+      localStorage.setItem('isAuthenticated', 'true');
+      localStorage.setItem('userEmail', email);
+      navigate('/dashboard');
+    }, 800);
   };
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4 md:p-8">
+      {/* Container */}
       <div className="w-full max-w-md">
+        {/* Logo / Brand */}
         <div className="text-center mb-12">
           <div className="inline-flex items-center justify-center w-12 h-12 border-2 border-foreground mb-6">
             <div className="w-6 h-6 border-2 border-foreground" />
@@ -83,40 +62,55 @@ export default function RegisterPage() {
           </h1>
         </div>
 
+        {/* Error */}
         {error && (
           <div className="mb-6 p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm text-center">
             {error}
           </div>
         )}
 
+        {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
-            <Label htmlFor="fullName">Full Name</Label>
-            <Input id="fullName" type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
-          </div>
-          <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
-            <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={isLoading} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="password">Password</Label>
-            <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required disabled={isLoading} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="confirmPassword">Confirm Password</Label>
-            <Input id="confirmPassword" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
+            <Input id="confirmPassword" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required disabled={isLoading} />
           </div>
           <Button type="submit" disabled={isLoading} onMouseEnter={playHoverSound} className="w-full h-11">
             {isLoading ? 'Creating account...' : 'Create Account'}
           </Button>
         </form>
 
-        <div className="my-8">
-          <Button type="button" variant="outline" onClick={handleGoogleRegister} onMouseEnter={playHoverSound} className="w-full h-11">
-            Continue with Google
-          </Button>
+        {/* Divider */}
+        <div className="relative my-8">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-border" />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-background px-2 text-muted-foreground">Or</span>
+          </div>
         </div>
+
+        {/* Google */}
+        <Button type="button" variant="outline" onMouseEnter={playHoverSound} className="w-full h-11">
+          Continue with Google
+        </Button>
+
+        {/* Footer */}
+        <p className="text-center text-sm text-muted-foreground mt-8">
+          Already have an account?{' '}
+          <Link to="/login" onMouseEnter={playHoverSound} className="text-foreground hover:text-muted-foreground">
+            Sign in
+          </Link>
+        </p>
       </div>
     </div>
   );
-}
+};
