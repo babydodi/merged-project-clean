@@ -47,14 +47,19 @@ const LoginRegisterPage = () => {
   }
 
   // Toggle theme
-  const toggleTheme = () => {
-    playClickSound()
-    const newTheme = theme === 'light' ? 'dark' : 'light'
-    setTheme(newTheme)
-    if (typeof document !== 'undefined') {
-      document.documentElement.classList.toggle('dark')
+ const toggleTheme = () => {
+  playClickSound()
+  const newTheme = theme === 'light' ? 'dark' : 'light'
+  setTheme(newTheme)
+  if (typeof document !== 'undefined') {
+    if (newTheme === 'dark') {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
     }
   }
+}
+
 
   // Handle login
   const handleLogin = (e) => {
