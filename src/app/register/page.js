@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
-import { Label } from '../../components/ui/label';
+import { Button } from '../../components/ui/buttonemeg';
+import { Input } from '../../components/ui/inpug';
+import { Label } from '../../components/ui/labek';
 import { createHoverSoundHandler } from '../../components/useHoverSound';
 
 export const RegisterPage = () => {
