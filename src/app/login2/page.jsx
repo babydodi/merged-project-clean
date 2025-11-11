@@ -136,24 +136,24 @@ export default function LoginRegisterPage() {
   }
 
   const handleGoogleLogin = async () => {
-    playClickSound()
-    setError(null)
+  playClickSound()
+  setError(null)
 
-    if (!supabaseUrl || !supabaseAnon) {
-      setError('Supabase is not configured')
-      return
-    }
-
-    const redirectTarget = typeof window !== 'undefined' ? `${window.location.origin}/api/auth/callback2` : undefined
-    console.log('google oauth redirectTo:', redirectTarget)
-
-    const res = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: redirectTarget }
-    })
-    console.log('signInWithOAuth start result', res)
-    if (res.error) setError(res.error.message)
+  if (!supabaseUrl || !supabaseAnon) {
+    setError('Supabase is not configured')
+    return
   }
+
+  const redirectTarget = typeof window !== 'undefined' ? `${window.location.origin}/api/auth/callback2` : undefined
+  console.log('google oauth redirectTo:', redirectTarget)
+
+  const res = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: redirectTarget }
+  })
+  console.log('signInWithOAuth start result', res)
+  if (res.error) setError(res.error.message)
+}
 
   const handlePasswordReset = async (e) => {
     e.preventDefault()
