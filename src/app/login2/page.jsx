@@ -144,7 +144,7 @@ export default function LoginRegisterPage() {
       return
     }
 
-    const redirectTarget = typeof window !== 'undefined' ? `${window.location.origin}/api/auth/callback` : undefined
+    const redirectTarget = typeof window !== 'undefined' ? `${window.location.origin}/api/auth/callback2` : undefined
     console.log('google oauth redirectTo:', redirectTarget)
 
     const res = await supabase.auth.signInWithOAuth({
