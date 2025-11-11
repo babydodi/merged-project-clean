@@ -109,7 +109,7 @@ const LoginRegisterPage = () => {
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="login" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-6 bg-[#E5E4E4]/50 dark:bg-black/20">
+            <TabsList className="grid w-full grid-cols-2 mb-6 bg-[#E5E4E4]/50 dark:bg黑/20">
               <TabsTrigger 
                 value="login" 
                 onClick={playClickSound}
@@ -141,7 +141,7 @@ const LoginRegisterPage = () => {
                       placeholder="you@example.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="pl-10 bg-[#E5E4E4]/30 dark:bg-black/20 border-[#102837]/20 dark:border-[#E5E4E4]/20 focus:border-[#102837] dark:focus:border-[#FAF0CA] text-[#102837] dark:text-[#E5E4E4] placeholder:text-[#102837]/40 dark:placeholder:text-[#E5E4E4]/40"
+                      className="pl-10 bg-[#E5E4E4]/30 dark:bg黑/20 border-[#102837]/20 dark:border-[#E5E4E4]/20 focus:border-[#102837] dark:focus:border-[#FAF0CA] text-[#102837] dark:text-[#E5E4E4] placeholder:text-[#102837]/40 dark:placeholder:text-[#E5E4E4]/40"
                       required
                     />
                   </div>
@@ -158,7 +158,7 @@ const LoginRegisterPage = () => {
                       placeholder="••••••••"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="pl-10 bg-[#E5E4E4]/30 dark:bg-black/20 border-[#102837]/20 dark:border-[#E5E4E4]/20 focus:border-[#102837] dark:focus:border-[#FAF0CA] text-[#102837] dark:text-[#E5E4E4] placeholder:text-[#102837]/40 dark:placeholder:text-[#E5E4E4]/40"
+                      className="pl-10 bg-[#E5E4E4]/30 dark:bg黑/20 border-[#102837]/20 dark:border-[#E5E4E4]/20 focus:border-[#102837] dark:focus:border-[#FAF0CA] text-[#102837] dark:text-[#E5E4E4] placeholder:text-[#102837]/40 dark:placeholder:text-[#E5E4E4]/40"
                       required
                     />
                   </div>
@@ -179,7 +179,7 @@ const LoginRegisterPage = () => {
                     <DialogHeader>
                       <DialogTitle className="text-[#102837] dark:text-[#E5E4E4]">Reset Password</DialogTitle>
                       <DialogDescription className="text-[#102837]/60 dark:text-[#E5E4E4]/60">
-                        Enter your email address and we'll send you a reset link.
+                        Enter your email address and we&apos;ll send you a reset link.
                       </DialogDescription>
                     </DialogHeader>
                     <form onSubmit={handlePasswordReset}>
@@ -194,7 +194,7 @@ const LoginRegisterPage = () => {
                             placeholder="you@example.com"
                             value={resetEmail}
                             onChange={(e) => setResetEmail(e.target.value)}
-                            className="bg-[#E5E4E4]/30 dark:bg-black/20 border-[#102837]/20 dark:border-[#E5E4E4]/20 focus:border-[#102837] dark:focus:border-[#FAF0CA] text-[#102837] dark:text-[#E5E4E4]"
+                            className="bg-[#E5E4E4]/30 dark:bg黑/20 border-[#102837]/20 dark:border-[#E5E4E4]/20 focus:border-[#102837] dark:focus:border-[#FAF0CA] text-[#102837] dark:text-[#E5E4E4]"
                             required
                           />
                         </div>
@@ -234,7 +234,7 @@ const LoginRegisterPage = () => {
                 type="button"
                 variant="outline"
                 onClick={handleGoogleLogin}
-                className="w-full border-[#102837]/20 dark:border-[#E5E4E4]/20 hover:bg-[#E5E4E4]/50 dark:hover:bg-black/20 text-[#102837] dark:text-[#E5E4E4] transition-all duration-300 hover:scale-[1.02]"
+                className="w-full border-[#102837]/20 dark:border-[#E5E4E4]/20 hover:bg-[#E5E4E4]/50 dark:hover:bg黑/20 text-[#102837] dark:text-[#E5E4E4] transition-all duration-300 hover:scale-[1.02]"
               >
                 <Chrome className="mr-2 h-4 w-4" />
                 Google
@@ -256,7 +256,7 @@ const LoginRegisterPage = () => {
                       placeholder="John Doe"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="pl-10 bg-[#E5E4E4]/30 dark:bg-black/20 border-[#102837]/20 dark:border-[#E5E4E4]/20 focus:border-[#102837] dark:focus:border-[#FAF0CA] text-[#102837] dark:text-[#E5E4E4] placeholder:text-[#102837]/40 dark:placeholder:text-[#E5E4E4]/40"
+                      className="pl-10 bg-[#E5E4E4]/30 dark:bg黑/20 border-[#102837]/20 dark:border-[#E5E4E4]/20 focus:border-[#102837] dark:focus:border-[#FAF0CA] text-[#102837] dark:text-[#E5E4E4] placeholder:text-[#102837]/40 dark:placeholder:text-[#E5E4E4]/40"
                       required
                     />
                   </div>
@@ -273,7 +273,7 @@ const LoginRegisterPage = () => {
                       placeholder="you@example.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="pl-10 bg-[#E5E4E4]/30 dark:bg-black/20 border-[#102837]/20 dark:border-[#E5E4E4]/20 focus:border-[#102837] dark:focus:border-[#FAF0CA] text-[#102837] dark:text-[#E5E4E4] placeholder:text-[#102837]/40 dark:placeholder:text-[#E5E4E4]/40"
+                      className="pl-10 bg-[#E5E4E4]/30 dark:bg黑/20 border-[#102837]/20 dark:border-[#E5E4E4]/20 focus:border-[#102837] dark:focus:border-[#FAF0CA] text-[#102837] dark:text-[#E5E4E4] placeholder:text-[#102837]/40 dark:placeholder:text-[#E5E4E4]/40"
                       required
                     />
                   </div>
@@ -290,7 +290,7 @@ const LoginRegisterPage = () => {
                       placeholder="••••••••"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="pl-10 bg-[#E5E4E4]/30 dark:bg-black/20 border-[#102837]/20 dark:border-[#E5E4E4]/20 focus:border-[#102837] dark:focus:border-[#FAF0CA] text-[#102837] dark:text-[#E5E4E4] placeholder:text-[#102837]/40 dark:placeholder:text-[#E5E4E4]/40"
+                      className="pl-10 bg-[#E5E4E4]/30 dark:bg黑/20 border-[#102837]/20 dark:border-[#E5E4E4]/20 focus:border-[#102837] dark:focus:border-[#FAF0CA] text-[#102837] dark:text-[#E5E4E4] placeholder:text-[#102837]/40 dark:placeholder:text-[#E5E4E4]/40"
                       required
                     />
                   </div>
@@ -318,7 +318,7 @@ const LoginRegisterPage = () => {
                 type="button"
                 variant="outline"
                 onClick={handleGoogleLogin}
-                className="w-full border-[#102837]/20 dark:border-[#E5E4E4]/20 hover:bg-[#E5E4E4]/50 dark:hover:bg-black/20 text-[#102837] dark:text-[#E5E4E4] transition-all duration-300 hover:scale-[1.02]"
+                className="w-full border-[#102837]/20 dark:border-[#E5E4E4]/20 hover:bg-[#E5E4E4]/50 dark:hover:bg黑/20 text-[#102837] dark:text-[#E5E4E4] transition-all duration-300 hover:scale-[1.02]"
               >
                 <Chrome className="mr-2 h-4 w-4" />
                 Google
