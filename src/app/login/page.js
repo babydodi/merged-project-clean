@@ -11,10 +11,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/ta
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../../components/ui/dialog'
 import { Moon, Sun, Mail, Lock, User, Chrome } from 'lucide-react'
 
-/**
- * Create a client in the client component using public envs.
- * If envs are missing we gracefully show a warning in the UI.
- */
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 const supabase = createClient(supabaseUrl, supabaseAnon)
@@ -22,17 +18,14 @@ const supabase = createClient(supabaseUrl, supabaseAnon)
 export default function LoginRegisterPage() {
   const router = useRouter()
 
-  // UI / theme state
   const [theme, setTheme] = useState('light')
   const [envWarning, setEnvWarning] = useState(null)
 
-  // Auth form state (shared)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [resetEmail, setResetEmail] = useState('')
 
-  // UI state
   const [isResetOpen, setIsResetOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -49,7 +42,6 @@ export default function LoginRegisterPage() {
     else document.documentElement.classList.remove('dark')
   }, [theme])
 
-  // Click sound (non blocking)
   const playClickSound = () => {
     if (typeof window === 'undefined') return
     try {
@@ -75,7 +67,6 @@ export default function LoginRegisterPage() {
     if (typeof document !== 'undefined') document.documentElement.classList.toggle('dark')
   }
 
-  // --- LOGIN (email/password) ---
   const handleLogin = async (e) => {
     e.preventDefault()
     playClickSound()
@@ -99,7 +90,6 @@ export default function LoginRegisterPage() {
     router.push('/dashboard')
   }
 
-  // --- REGISTER (email/password + upsert public.users) ---
   const handleRegister = async (e) => {
     e.preventDefault()
     playClickSound()
@@ -124,7 +114,6 @@ export default function LoginRegisterPage() {
       return
     }
 
-    // If user object returned, attempt to upsert into public.users (best-effort)
     const userId = data?.user?.id
     const userEmail = data?.user?.email
     if (userId && userEmail) {
@@ -141,7 +130,6 @@ export default function LoginRegisterPage() {
     router.push('/dashboard')
   }
 
-  // --- GOOGLE OAUTH (redirect to callback) ---
   const handleGoogleLogin = async () => {
     playClickSound()
     setError(null)
@@ -151,9 +139,6 @@ export default function LoginRegisterPage() {
       return
     }
 
-    // IMPORTANT: redirectTo must match where your callback route lives.
-    // This file assumes your callback route is at /callback (app/callback/route.js).
-    // If you placed it under /api/auth/callback change this to `${location.origin}/api/auth/callback`
     const redirectTarget = typeof window !== 'undefined' ? `${window.location.origin}/callback` : undefined
 
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
@@ -164,7 +149,6 @@ export default function LoginRegisterPage() {
     if (oauthError) setError(oauthError.message)
   }
 
-  // --- PASSWORD RESET ---
   const handlePasswordReset = async (e) => {
     e.preventDefault()
     playClickSound()
@@ -186,7 +170,6 @@ export default function LoginRegisterPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background text-foreground transition-all duration-500 p-4">
-      {/* Theme toggle */}
       <button
         onClick={toggleTheme}
         className="fixed top-6 right-6 p-3 rounded-full bg-card text-card-foreground backdrop-blur-sm shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110 border border-border"
@@ -214,7 +197,6 @@ export default function LoginRegisterPage() {
               <TabsTrigger value="register" onClick={playClickSound} className="data-[state=active]:bg-background data-[state=active]:text-foreground transition-all">Register</TabsTrigger>
             </TabsList>
 
-            {/* LOGIN TAB */}
             <TabsContent value="login" className="space-y-4">
               <form onSubmit={handleLogin} className="space-y-4">
                 <div className="space-y-2">
@@ -241,7 +223,9 @@ export default function LoginRegisterPage() {
                   <DialogContent className="bg-popover text-popover-foreground backdrop-blur-md border border-border">
                     <DialogHeader>
                       <DialogTitle>Reset Password</DialogTitle>
-                      <DialogDescription className="text-muted-foreground">Enter your email address and we'll send you a reset link.</DialogDescription>
+                      <DialogDescription className="text-muted-foreground">
+                        Enter your email address and we&apos;ll send you a reset link.
+                      </DialogDescription>
                     </DialogHeader>
 
                     <form onSubmit={handlePasswordReset}>
@@ -271,7 +255,6 @@ export default function LoginRegisterPage() {
               </Button>
             </TabsContent>
 
-            {/* REGISTER TAB */}
             <TabsContent value="register" className="space-y-4">
               <form onSubmit={handleRegister} className="space-y-4">
                 <div className="space-y-2">
