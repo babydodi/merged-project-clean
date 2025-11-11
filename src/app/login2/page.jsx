@@ -79,11 +79,13 @@ export default function LoginRegisterPage() {
       return
     }
 
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+    // debug: log full response to console when debugging
+    const res = await supabase.auth.signInWithPassword({ email, password })
+    console.log('signInWithPassword result', res)
     setLoading(false)
 
-    if (signInError) {
-      setError(signInError.message)
+    if (res.error) {
+      setError(res.error.message)
       return
     }
 
@@ -102,28 +104,31 @@ export default function LoginRegisterPage() {
       return
     }
 
-    const { data, error: signUpError } = await supabase.auth.signUp({
+    const res = await supabase.auth.signUp({
       email,
       password,
       options: { data: { full_name: name } }
     })
+    console.log('signUp result', res)
 
-    if (signUpError) {
-      setError(signUpError.message)
+    if (res.error) {
+      setError(res.error.message)
       setLoading(false)
       return
     }
 
-    const userId = data?.user?.id
-    const userEmail = data?.user?.email
+    const userId = res.data?.user?.id
+    const userEmail = res.data?.user?.email
     if (userId && userEmail) {
       try {
-        await fetch('/api/auth/upsert-user', {
+        await fetch(`${window.location.origin}/api/auth/upsert-user`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id: userId, email: userEmail, full_name: name }),
         })
-      } catch {}
+      } catch (e) {
+        console.error('upsert-user fetch error', e)
+      }
     }
 
     setLoading(false)
@@ -139,14 +144,15 @@ export default function LoginRegisterPage() {
       return
     }
 
-    const redirectTarget = typeof window !== 'undefined' ? `${window.location.origin}/callback` : undefined
+    const redirectTarget = typeof window !== 'undefined' ? `${window.location.origin}/api/auth/callback` : undefined
+    console.log('google oauth redirectTo:', redirectTarget)
 
-    const { error: oauthError } = await supabase.auth.signInWithOAuth({
+    const res = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: redirectTarget }
     })
-
-    if (oauthError) setError(oauthError.message)
+    console.log('signInWithOAuth start result', res)
+    if (res.error) setError(res.error.message)
   }
 
   const handlePasswordReset = async (e) => {
@@ -160,8 +166,9 @@ export default function LoginRegisterPage() {
     }
 
     const redirectTo = typeof window !== 'undefined' ? `${window.location.origin}/reset/callback` : undefined
-    const { error: resetErr } = await supabase.auth.resetPasswordForEmail(resetEmail, { redirectTo })
-    if (resetErr) setError(resetErr.message)
+    const res = await supabase.auth.resetPasswordForEmail(resetEmail, { redirectTo })
+    console.log('resetPasswordForEmail', res)
+    if (res.error) setError(res.error.message)
     else {
       setIsResetOpen(false)
       setResetEmail('')
@@ -223,10 +230,11 @@ export default function LoginRegisterPage() {
                   <DialogContent className="bg-popover text-popover-foreground backdrop-blur-md border border-border">
                     <DialogHeader>
                       <DialogTitle>Reset Password</DialogTitle>
-                      <DialogDescription className="text-muted-foreground">
-                        Enter your email address and we&apos;ll send you a reset link.
-                      </DialogDescription>
-                    </DialogHeader>
+                    <DialogHeader/>
+                    <DialogDescription className="text-muted-foreground">
+                      Enter your email address and we&apos;ll send you a reset link.
+                    </DialogDescription>
+                  </DialogHeader>
 
                     <form onSubmit={handlePasswordReset}>
                       <div className="space-y-4 py-4">
