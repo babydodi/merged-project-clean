@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { useSupabaseClient } from '@supabase/auth-helpers-react'
+import { Button } from '@/components/ui/buttonemeg'
+import { Input } from '@/components/ui/inpug'
+import { Label } from '@/components/ui/labek'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
@@ -17,23 +18,26 @@ const LoginRegisterPage = () => {
   const [name, setName] = useState('')
   const [resetEmail, setResetEmail] = useState('')
   const [isResetOpen, setIsResetOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
   const router = useRouter()
+  const supabase = useSupabaseClient()
 
   // Play click sound
   const playClickSound = () => {
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)()
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
     const oscillator = audioContext.createOscillator()
     const gainNode = audioContext.createGain()
-    
+
     oscillator.connect(gainNode)
     gainNode.connect(audioContext.destination)
-    
+
     oscillator.frequency.value = 800
     oscillator.type = 'sine'
-    
+
     gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
     gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1)
-    
+
     oscillator.start(audioContext.currentTime)
     oscillator.stop(audioContext.currentTime + 0.1)
   }
@@ -46,40 +50,98 @@ const LoginRegisterPage = () => {
     document.documentElement.classList.toggle('dark')
   }
 
-  // Handle login
-  const handleLogin = (e) => {
+  // Handle login (Supabase)
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     playClickSound()
-    // Placeholder - user will integrate Supabase later
-    console.log('Login:', { email, password })
-    router.push('/dashboard')
+    setError('')
+    setLoading(true)
+    try {
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+      if (signInError) {
+        setError(signInError.message)
+        return
+      }
+      router.push('/dashboard')
+    } catch (err) {
+      console.error(err)
+      setError('Unexpected error during sign in')
+    } finally {
+      setLoading(false)
+    }
   }
 
-  // Handle register
-  const handleRegister = (e) => {
+  // Handle register (Supabase + best-effort upsert)
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
     playClickSound()
-    // Placeholder - user will integrate Supabase later
-    console.log('Register:', { name, email, password })
-    router.push('/dashboard')
+    setError('')
+    setLoading(true)
+    try {
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { full_name: name } },
+      })
+      if (signUpError) {
+        setError(signUpError.message)
+        return
+      }
+      if (data?.user?.id) {
+        fetch(`${window.location.origin}/api/auth/upsert-user`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: data.user.id, email: data.user.email, full_name: name }),
+        }).catch((e) => console.error('upsert-user error', e))
+      }
+      router.push('/dashboard')
+    } catch (err) {
+      console.error(err)
+      setError('Unexpected error during registration')
+    } finally {
+      setLoading(false)
+    }
   }
 
-  // Handle Google login
-  const handleGoogleLogin = () => {
+  // Handle Google login (Supabase OAuth)
+  const handleGoogleLogin = async () => {
     playClickSound()
-    // Placeholder - user will integrate Supabase later
-    console.log('Google login')
-    router.push('/dashboard')
+    setError('')
+    setLoading(true)
+    try {
+      const redirectTo = `${window.location.origin}/api/auth/callback2`
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo },
+      })
+      if (error) setError(error.message)
+      // browser will redirect away automatically on success
+    } catch (err) {
+      console.error(err)
+      setError('Unexpected error starting OAuth')
+    } finally {
+      setLoading(false)
+    }
   }
 
-  // Handle password reset
-  const handlePasswordReset = (e) => {
+  // Handle password reset (Supabase)
+  const handlePasswordReset = async (e: React.FormEvent) => {
     e.preventDefault()
     playClickSound()
-    // Placeholder - user will integrate Supabase later
-    console.log('Password reset for:', resetEmail)
-    setIsResetOpen(false)
-    setResetEmail('')
+    setError('')
+    try {
+      const redirectTo = `${window.location.origin}/reset/callback`
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(resetEmail, { redirectTo })
+      if (resetErr) {
+        setError(resetErr.message)
+      } else {
+        setIsResetOpen(false)
+        setResetEmail('')
+      }
+    } catch (err) {
+      console.error(err)
+      setError('Unexpected error sending reset email')
+    }
   }
 
   return (
@@ -108,17 +170,24 @@ const LoginRegisterPage = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {/* Error banner (non-intrusive, preserves design) */}
+          {error && (
+            <div className="mb-4 rounded-md border border-red-300 bg-red-50 text-red-700 px-3 py-2 text-sm">
+              {error}
+            </div>
+          )}
+
           <Tabs defaultValue="login" className="w-full">
             <TabsList className="grid w-full grid-cols-2 mb-6 bg-[#E5E4E4]/50 dark:bg黑/20">
-              <TabsTrigger 
-                value="login" 
+              <TabsTrigger
+                value="login"
                 onClick={playClickSound}
                 className="data-[state=active]:bg-white dark:data-[state=active]:bg-[#102837] data-[state=active]:text-[#102837] dark:data-[state=active]:text-[#FAF0CA] transition-all"
               >
                 Login
               </TabsTrigger>
-              <TabsTrigger 
-                value="register" 
+              <TabsTrigger
+                value="register"
                 onClick={playClickSound}
                 className="data-[state=active]:bg-white dark:data-[state=active]:bg-[#102837] data-[state=active]:text-[#102837] dark:data-[state=active]:text-[#FAF0CA] transition-all"
               >
@@ -213,9 +282,10 @@ const LoginRegisterPage = () => {
 
                 <Button
                   type="submit"
+                  disabled={loading}
                   className="w-full bg-[#102837] hover:bg-[#102837]/90 dark:bg-[#FAF0CA] dark:hover:bg-[#FAF0CA]/90 text-white dark:text-[#102837] transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-[1.02]"
                 >
-                  Sign In
+                  {loading ? 'Signing...' : 'Sign In'}
                 </Button>
               </form>
 
@@ -234,6 +304,7 @@ const LoginRegisterPage = () => {
                 type="button"
                 variant="outline"
                 onClick={handleGoogleLogin}
+                disabled={loading}
                 className="w-full border-[#102837]/20 dark:border-[#E5E4E4]/20 hover:bg-[#E5E4E4]/50 dark:hover:bg黑/20 text-[#102837] dark:text-[#E5E4E4] transition-all duration-300 hover:scale-[1.02]"
               >
                 <Chrome className="mr-2 h-4 w-4" />
@@ -297,9 +368,10 @@ const LoginRegisterPage = () => {
                 </div>
                 <Button
                   type="submit"
+                  disabled={loading}
                   className="w-full bg-[#102837] hover:bg-[#102837]/90 dark:bg-[#FAF0CA] dark:hover:bg-[#FAF0CA]/90 text-white dark:text-[#102837] transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-[1.02]"
                 >
-                  Create Account
+                  {loading ? 'Creating...' : 'Create Account'}
                 </Button>
               </form>
 
@@ -318,6 +390,7 @@ const LoginRegisterPage = () => {
                 type="button"
                 variant="outline"
                 onClick={handleGoogleLogin}
+                disabled={loading}
                 className="w-full border-[#102837]/20 dark:border-[#E5E4E4]/20 hover:bg-[#E5E4E4]/50 dark:hover:bg黑/20 text-[#102837] dark:text-[#E5E4E4] transition-all duration-300 hover:scale-[1.02]"
               >
                 <Chrome className="mr-2 h-4 w-4" />
@@ -326,6 +399,7 @@ const LoginRegisterPage = () => {
             </TabsContent>
           </Tabs>
         </CardContent>
+        <CardFooter />
       </Card>
     </div>
   )
