@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useSupabaseClient, useSession } from '@supabase/auth-helpers-react'
-import { Button } from '@/components/ui/buttonr'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/carm'
-import { Progress } from '@/components/ui/progress'
+import { Button } from '@/components/ui/buttonn'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Progress } from '@/components/ui/progressl'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabsu'
 import {
   BookOpen,
@@ -342,7 +342,7 @@ export default function Dashboard() {
                         initial={{ opacity: 0, x: -20 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: 0.5 + index * 0.1 }}
-                        whileHover={{ x: 5, transition={{ duration: 0.2 } }}
+                        whileHover={{ x: 5, transition: { duration: 0.2 } }}
                         className="p-4 bg-[#0a0a0a] rounded-lg border border-[#2a2a2a] hover:border-[#3a3a3a] transition-all"
                       >
                         <div className="flex items-center justify-between">
