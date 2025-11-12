@@ -5,7 +5,7 @@ import { motion } from 'framer-motion'
 import { useSupabaseClient, useSession } from '@supabase/auth-helpers-react'
 import { Button } from '@/components/ui/buttonn'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Progress } from '@/components/ui/progressss'
+import { Progress } from '@/components/ui/progresss'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabsu'
 import {
   BookOpen,
