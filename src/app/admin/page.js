@@ -14,7 +14,9 @@ export default function AdminTestsPage() {
   // رفع اختبار جديد
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [file, setFile] = useState(null);
+  const [grammarFile, setGrammarFile] = useState(null);
+  const [readingFile, setReadingFile] = useState(null);
+  const [listeningFile, setListeningFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
 
@@ -44,8 +46,9 @@ export default function AdminTestsPage() {
       setMessage('❌ العنوان مطلوب');
       return;
     }
-    if (!file) {
-      setMessage('❌ اختر ملف JSON');
+
+    if (!grammarFile && !readingFile && !listeningFile) {
+      setMessage('❌ اختر على الأقل ملف واحد (Grammar / Reading / Listening)');
       return;
     }
 
@@ -53,15 +56,27 @@ export default function AdminTestsPage() {
       setUploading(true);
       setMessage('');
 
-      const text = await file.text();
-      const json = JSON.parse(text);
+      const parseFile = async (file) => {
+        if (!file) return [];
+        const text = await file.text();
+        const json = JSON.parse(text);
+        return json.chapters || [];
+      };
+
+      const grammarChapters = await parseFile(grammarFile);
+      const readingChapters = await parseFile(readingFile);
+      const listeningChapters = await parseFile(listeningFile);
 
       const body = {
         title,
         description,
         availability: 'all',
         is_published: true,
-        chapters: json.chapters || [],
+        chapters: [
+          ...grammarChapters,
+          ...readingChapters,
+          ...listeningChapters,
+        ],
       };
 
       const res = await fetch('/api/admin/upload-json', {
@@ -75,14 +90,16 @@ export default function AdminTestsPage() {
         setMessage(`✅ تم رفع الاختبار بنجاح (ID: ${data.test_id})`);
         setTitle('');
         setDescription('');
-        setFile(null);
+        setGrammarFile(null);
+        setReadingFile(null);
+        setListeningFile(null);
         loadTests(); // إعادة تحميل القائمة
       } else {
         setMessage(`❌ خطأ: ${data.error}`);
       }
     } catch (err) {
       console.error(err);
-      setMessage('❌ حدث خطأ أثناء رفع الملف');
+      setMessage('❌ حدث خطأ أثناء رفع الملفات');
     } finally {
       setUploading(false);
     }
@@ -117,12 +134,31 @@ export default function AdminTestsPage() {
           />
         </div>
 
+        {/* خانات رفع منفصلة */}
         <div className="mb-4">
-          <label className="block mb-1 font-semibold">ملف JSON</label>
+          <label className="block mb-1 font-semibold">📘 ملف Grammar</label>
           <input
             type="file"
             accept=".json"
-            onChange={(e) => setFile(e.target.files[0])}
+            onChange={(e) => setGrammarFile(e.target.files[0])}
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="block mb-1 font-semibold">📖 ملف Reading</label>
+          <input
+            type="file"
+            accept=".json"
+            onChange={(e) => setReadingFile(e.target.files[0])}
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="block mb-1 font-semibold">🎧 ملف Listening</label>
+          <input
+            type="file"
+            accept=".json"
+            onChange={(e) => setListeningFile(e.target.files[0])}
           />
         </div>
 
