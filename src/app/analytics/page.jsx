@@ -5,7 +5,7 @@ import { useSupabaseClient, useSession } from '@supabase/auth-helpers-react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/buttonn'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Users, Play, Clock, Trophy, RefreshCw } from 'lucide-react'
+import { Play, RefreshCw } from 'lucide-react'
 
 export default function StudentAnalyticsPage() {
   const supabase = useSupabaseClient()
@@ -15,11 +15,11 @@ export default function StudentAnalyticsPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [stats, setStats] = useState({
-    subscription: null,           // { plan, is_active, start_date, end_date, status }
-    myAttemptsCount: 0,          // عدد المحاولات
-    myAvgScore: 0,               // متوسط درجاتي
-    recentResults: [],           // أحدث النتائج الشخصية
-    recommendedTests: [],        // اختبارات مقترحة (published & available to user & not attempted)
+    subscription: null,
+    myAttemptsCount: 0,
+    myAvgScore: 0,
+    recentResults: [],
+    recommendedTests: [],
   })
 
   // loadAnalytics: يجلب بيانات مخصّصة بالمستخدم
@@ -30,7 +30,7 @@ export default function StudentAnalyticsPage() {
     try {
       const userId = session.user.id
 
-      // 1) حالة الاشتراك الحالية لهذا المستخدم (آخر اشتراك نشط أو آخر صف)
+      // 1) حالة الاشتراك الحالية لهذا المستخدم (آخر اشتراك)
       const { data: subData, error: subErr } = await supabase
         .from('subscriptions')
         .select('id, plan, is_active, start_date, end_date, status, amount')
@@ -40,9 +40,8 @@ export default function StudentAnalyticsPage() {
       if (subErr) throw subErr
       const subscription = subData?.[0] || null
 
-      // 2) محاولات ونتائج المستخدم: آخر 12 نتيجة (joined via attempt)
-      // نأخذ آخر 12 attempt ثم نجيب النتائج المرتبطة
-      const { data: attemptsData, error: attemptsErr } = await supabase
+      // 2) محاولات المستخدم الأخيرة (آخر 12) ونتائجها
+      const { data: attemptsData = [], error: attemptsErr } = await supabase
         .from('test_attempts')
         .select('id, test_id, started_at, completed_at, created_at')
         .eq('user_id', userId)
@@ -50,16 +49,16 @@ export default function StudentAnalyticsPage() {
         .limit(12)
       if (attemptsErr) throw attemptsErr
 
-      const attemptIds = (attemptsData || []).map(a => a.id)
+      const attemptIds = attemptsData.map(a => a.id)
       let recentResults = []
       if (attemptIds.length) {
-        const { data: resultsData, error: resultsErr } = await supabase
+        const { data: resultsData = [], error: resultsErr } = await supabase
           .from('user_results')
           .select('id, attempt_id, score, total_questions, percentage, created_at')
           .in('attempt_id', attemptIds)
         if (resultsErr) throw resultsErr
-        // join results with attempts to include test_id and date
-        recentResults = (resultsData || []).map(r => {
+
+        recentResults = resultsData.map(r => {
           const att = attemptsData.find(a => a.id === r.attempt_id)
           return {
             id: r.id,
@@ -70,46 +69,42 @@ export default function StudentAnalyticsPage() {
             percentage: Number(r.percentage) || 0,
             date: r.created_at,
           }
-        }).sort((a,b)=> new Date(b.date) - new Date(a.date))
+        }).sort((a, b) => new Date(b.date) - new Date(a.date))
       }
 
-      // 3) إحصاءات شخصية: عدد المحاولات و متوسط الدرجات
-      const myAttemptsCount = (await supabase
+      // 3) إحصاءات شخصية: عدد المحاولات وكل النتائج
+      const { count: attemptsCount = 0 } = await supabase
         .from('test_attempts')
         .select('id', { count: 'exact', head: true })
-        .eq('user_id', userId)
-      ).count || 0
+        .eq('user_id', userId) || { count: 0 }
 
-      const { data: allMyResults, error: myResultsErr } = await supabase
+      // جلب كل نتائج المستخدم لحساب المتوسط (نحدّ من الاستعلام إذا بيانات كبيرة)
+      const { data: allMyResults = [], error: myResultsErr } = await supabase
         .from('user_results')
         .select('percentage')
-        .in('attempt_id', attemptIds.length ? attemptIds : ['-']) // إذا لا محاولات: تمرير مفتعل لتفادي جلب طويل
+        .in('attempt_id', attemptIds.length ? attemptIds : ['-'])
       if (myResultsErr) {
-        // إذا لم تُرجع نتيجة بسبب طلب غير صالح نسمح بالمتابعة
-        console.warn('no personal results or fetch error for personal results', myResultsErr)
+        // لا نوقف التنفيذ لو فشل هذا الاستعلام، نستخدم النتائج الأخيرة ك fallback
+        console.warn('fetch personal results warning', myResultsErr)
       }
       const myAvgScore =
-        allMyResults && allMyResults.length
+        (allMyResults && allMyResults.length)
           ? Math.round(allMyResults.reduce((s, r) => s + Number(r.percentage || 0), 0) / allMyResults.length)
-          : recentResults.length
-          ? Math.round(recentResults.reduce((s, r) => s + Number(r.percentage || 0), 0) / recentResults.length)
-          : 0
+          : (recentResults.length
+            ? Math.round(recentResults.reduce((s, r) => s + Number(r.percentage || 0), 0) / recentResults.length)
+            : 0)
 
-      // 4) اختبارات مقترحة: اختبارات منشورة متاحة للمستخدم (availability rules)
-      // القاعدة: show tests where is_published = true AND
-      // - availability = 'all' OR
-      // - availability = 'subscribers' and user has active subscription
-      // ثم استبعد الاختبارات التي قام المستخدم بمحاولة أي منها
-      const { data: publishedTests, error: testsErr } = await supabase
+      // 4) اختبارات مقترحة: اختبارات منشورة متاحة للمستخدم
+      const { data: publishedTests = [], error: testsErr } = await supabase
         .from('tests')
         .select('id, title, description, availability')
         .eq('is_published', true)
       if (testsErr) throw testsErr
 
-      const attemptedTestIds = (attemptsData || []).map(a => a.test_id).filter(Boolean)
+      const attemptedTestIds = attemptsData.map(a => a.test_id).filter(Boolean)
       const hasActiveSubscription = !!subscription && subscription.is_active === true
 
-      const recommendedTests = (publishedTests || [])
+      const recommendedTests = publishedTests
         .filter(t => {
           if (attemptedTestIds.includes(t.id)) return false
           if (t.availability === 'all') return true
@@ -117,12 +112,11 @@ export default function StudentAnalyticsPage() {
           if (t.availability === 'non_subscribers' && !hasActiveSubscription) return true
           return false
         })
-        .slice(0, 8) // حد عرض صغير للواجهة
+        .slice(0, 8)
 
-      // تحديث الحالة
       setStats({
         subscription,
-        myAttemptsCount: Number(myAttemptsCount) || 0,
+        myAttemptsCount: Number(attemptsCount) || 0,
         myAvgScore,
         recentResults,
         recommendedTests,
@@ -176,7 +170,7 @@ export default function StudentAnalyticsPage() {
           </div>
         )}
 
-        {/* Summary Cards: subscription, attempts, avg score */}
+        {/* Summary Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Card className="bg-[#141414] border-[#2a2a2a]">
             <CardHeader>
@@ -209,3 +203,81 @@ export default function StudentAnalyticsPage() {
               <CardDescription className="text-gray-400">Total attempts / إجمالي المحاولات</CardDescription>
             </CardContent>
           </Card>
+
+          <Card className="bg-[#141414] border-[#2a2a2a]">
+            <CardHeader>
+              <CardTitle className="text-sm text-gray-400">Average Score / متوسط الدرجات</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-white">{myAvgScore}%</div>
+              <CardDescription className="text-gray-400">Across your results / عبر نتائجك</CardDescription>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Recent Results */}
+        <Card className="bg-[#141414] border-[#2a2a2a]">
+          <CardHeader>
+            <CardTitle className="text-lg text-white">Recent Results / النتائج الأخيرة</CardTitle>
+            <CardDescription className="text-gray-400">Your latest attempts and scores / أحدث محاولاتك ودرجاتك</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {recentResults.length === 0 ? (
+              <div className="text-gray-400">No recent results / لا توجد نتائج حديثة</div>
+            ) : (
+              <div className="space-y-3">
+                {recentResults.map(r => (
+                  <div key={r.id} className="flex items-center justify-between p-3 bg-[#0a0a0a] rounded-md border border-[#2a2a2a]">
+                    <div>
+                      <div className="text-sm text-gray-400">Test ID: {String(r.test_id).slice(0,8)}</div>
+                      <div className="text-white font-medium">{r.percentage}% • {r.score}/{r.total_questions}</div>
+                      <div className="text-xs text-gray-500">{new Date(r.date).toLocaleString()}</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" onClick={() => router.push(`/my-test/${r.test_id}`)} className="bg-white text-black">
+                        <Play className="w-4 h-4 mr-2" />
+                        Review
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Recommended Tests */}
+        <Card className="bg-[#141414] border-[#2a2a2a]">
+          <CardHeader>
+            <CardTitle className="text-lg text-white">Recommended Tests / اختبارات مقترحة</CardTitle>
+            <CardDescription className="text-gray-400">Tests you haven't tried yet / اختبارات لم تجربها بعد</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {recommendedTests.length === 0 ? (
+              <div className="text-gray-400">No recommendations available / لا توجد توصيات حالياً</div>
+            ) : (
+              <div className="grid sm:grid-cols-2 gap-3">
+                {recommendedTests.map(t => (
+                  <div key={t.id} className="p-3 bg-[#0a0a0a] rounded-md border border-[#2a2a2a] flex items-center justify-between">
+                    <div>
+                      <div className="text-white font-medium">{t.title}</div>
+                      <div className="text-xs text-gray-500">{t.availability}</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" onClick={() => router.push(`/my-test/${t.id}`)} className="bg-white text-black">
+                        <Play className="w-4 h-4 mr-2" />
+                        Start
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="text-sm text-gray-500">Data shown is personal to your account / البيانات معروضة لحسابك فقط</div>
+      </div>
+    </div>
+  )
+}
