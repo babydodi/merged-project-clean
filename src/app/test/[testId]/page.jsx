@@ -174,10 +174,11 @@ export default function TestPage() {
     }
   };
 
-  const finalizeScoresAndWrongs = () => {
-    const computeRatio = chapter => {
+  // تعديل: جعل الدالة async + إدخال user_results + تحديث completed_at
+  const finalizeScoresAndWrongs = async () => {
+    const computeAgg = chapter => {
       let total = 0, correct = 0;
-      if (!chapter) return 0;
+      if (!chapter) return { total: 0, correct: 0 };
       if (chapter.type === 'listening') {
         for (const p of chapter.pieces) {
           for (const q of p.listening_questions) {
@@ -198,13 +199,22 @@ export default function TestPage() {
           if (answers[q.id] === q.answer) correct++;
         }
       }
-      return total ? correct / total : 0;
+      return { total, correct };
     };
 
-    const lScore = Math.round(computeRatio(chapters.find(c => c.type === 'listening')) * 20);
-    const rScore = Math.round(computeRatio(chapters.find(c => c.type === 'reading')) * 40);
-    const gScore = Math.round(computeRatio(chapters.find(c => c.type === 'grammar')) * 40);
-    setScores({ listening: lScore, reading: rScore, grammar: gScore, total: lScore + rScore + gScore });
+    const l = computeAgg(chapters.find(c => c.type === 'listening'));
+    const r = computeAgg(chapters.find(c => c.type === 'reading'));
+    const g = computeAgg(chapters.find(c => c.type === 'grammar'));
+
+    const lScore = Math.round((l.total ? (l.correct / l.total) : 0) * 20);
+    const rScore = Math.round((r.total ? (r.correct / r.total) : 0) * 40);
+    const gScore = Math.round((g.total ? (g.correct / g.total) : 0) * 40);
+    const totalScore = lScore + rScore + gScore;
+    const totalQuestions = l.total + r.total + g.total;
+    const totalCorrect = l.correct + r.correct + g.correct;
+    const percentage = totalQuestions ? (totalCorrect / totalQuestions) * 100 : 0;
+
+    setScores({ listening: lScore, reading: rScore, grammar: gScore, total: totalScore });
 
     const wrongs = [];
     chapters.forEach(ch => {
@@ -226,6 +236,30 @@ export default function TestPage() {
       }
     });
     setWrongAnswers(wrongs);
+
+    // إدخال النتيجة في جدول user_results
+    if (attemptId) {
+      const { error: resultErr } = await supabase
+        .from('user_results')
+        .insert({
+          attempt_id: attemptId,
+          score: totalScore,
+          total_questions: totalQuestions,
+          percentage
+        });
+      if (resultErr) {
+        console.error('Error saving user result:', resultErr);
+      }
+
+      // تحديث وقت الإكمال في test_attempts
+      const { error: completeErr } = await supabase
+        .from('test_attempts')
+        .update({ completed_at: new Date().toISOString() })
+        .eq('id', attemptId);
+      if (completeErr) {
+        console.error('Error updating attempt completion time:', completeErr);
+      }
+    }
   };
 
   const handleNext = async () => {
@@ -269,7 +303,8 @@ export default function TestPage() {
       if (currentPieceIndex < last) {
         setCurrentPieceIndex(i => i + 1);
       } else {
-        finalizeScoresAndWrongs();
+        // عند انتهاء القواعد: نحسب النتائج، نحفظ user_results، نحدّث completed_at ثم نظهر صفحة النتائج
+        await finalizeScoresAndWrongs();
         setShowResult(true);
       }
       return;
