@@ -28,7 +28,6 @@ export default function TestPage() {
 
   useEffect(() => {
     initTest();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const initTest = async () => {
@@ -152,9 +151,8 @@ export default function TestPage() {
     setAnswers(prev => ({ ...prev, [questionId]: value }));
   };
 
-  // حفظ كل إجابة فوراً مع علامة الصح/الخطأ عبر upsert
   const savePieceAnswers = async chapterType => {
-    if (!attemptId || !currentChapter) return;
+    if (!attemptId) return;
     let qList = [];
     if (chapterType === 'listening') {
       qList = currentChapter?.pieces?.[currentPieceIndex]?.listening_questions || [];
@@ -164,56 +162,49 @@ export default function TestPage() {
       const q = currentChapter?.questions?.[currentPieceIndex];
       if (q) qList = [q];
     }
-
-    const rows = [];
     for (const q of qList) {
       if (answers[q.id] !== undefined) {
-        const selected = answers[q.id];
-        rows.push({
+        await supabase.from('question_attempts').insert({
           attempt_id: attemptId,
           question_id: q.id,
-          question_type: chapterType,
-          selected_choice: selected,
-          is_correct: selected === q.answer,
-          answered_at: new Date().toISOString()
+          selected_choice: answers[q.id],
+          question_type: chapterType
         });
       }
     }
-
-    if (rows.length === 0) return;
-
-    const { error } = await supabase
-      .from('question_attempts')
-      .upsert(rows, { onConflict: ['attempt_id', 'question_id'] });
-
-    if (error) console.error('savePieceAnswers upsert error', error);
   };
 
+  // تعديل: جعل الدالة async + إدخال user_results + تحديث completed_at
   const finalizeScoresAndWrongs = async () => {
-    if (!attemptId) return;
-
-    // جلب كل محاولات الأسئلة لهذه المحاولة
-    const { data: attemptsRows, error: attemptsErr } = await supabase
-      .from('question_attempts')
-      .select('question_id, question_type, selected_choice, is_correct')
-      .eq('attempt_id', attemptId);
-    if (attemptsErr) {
-      console.error('fetch question_attempts error', attemptsErr);
-      return;
-    }
-
-    const groups = { listening: [], reading: [], grammar: [] };
-    attemptsRows.forEach(r => groups[r.question_type]?.push(r));
-
-    const computeFromRows = rows => {
-      const total = rows.length;
-      const correct = rows.filter(r => r.is_correct).length;
+    const computeAgg = chapter => {
+      let total = 0, correct = 0;
+      if (!chapter) return { total: 0, correct: 0 };
+      if (chapter.type === 'listening') {
+        for (const p of chapter.pieces) {
+          for (const q of p.listening_questions) {
+            total++;
+            if (answers[q.id] === q.answer) correct++;
+          }
+        }
+      } else if (chapter.type === 'reading') {
+        for (const p of chapter.pieces) {
+          for (const q of p.reading_questions) {
+            total++;
+            if (answers[q.id] === q.answer) correct++;
+          }
+        }
+      } else if (chapter.type === 'grammar') {
+        for (const q of chapter.questions) {
+          total++;
+          if (answers[q.id] === q.answer) correct++;
+        }
+      }
       return { total, correct };
     };
 
-    const l = computeFromRows(groups.listening || []);
-    const r = computeFromRows(groups.reading || []);
-    const g = computeFromRows(groups.grammar || []);
+    const l = computeAgg(chapters.find(c => c.type === 'listening'));
+    const r = computeAgg(chapters.find(c => c.type === 'reading'));
+    const g = computeAgg(chapters.find(c => c.type === 'grammar'));
 
     const lScore = Math.round((l.total ? (l.correct / l.total) : 0) * 20);
     const rScore = Math.round((r.total ? (r.correct / r.total) : 0) * 40);
@@ -221,38 +212,61 @@ export default function TestPage() {
     const totalScore = lScore + rScore + gScore;
     const totalQuestions = l.total + r.total + g.total;
     const totalCorrect = l.correct + r.correct + g.correct;
-    const percentage = totalQuestions
-      ? Math.round((totalCorrect / totalQuestions) * 100 * 100) / 100
-      : 0;
+    const percentage = totalQuestions ? (totalCorrect / totalQuestions) * 100 : 0;
 
     setScores({ listening: lScore, reading: rScore, grammar: gScore, total: totalScore });
 
-    const wrongs = attemptsRows.filter(r => !r.is_correct).map(r => r.question_id);
+    const wrongs = [];
+    chapters.forEach(ch => {
+      if (ch.type === 'listening') {
+        ch.pieces.forEach(p => p.listening_questions.forEach(q => {
+          const sel = answers[q.id];
+          if (sel !== undefined && sel !== q.answer) wrongs.push(q);
+        }));
+      } else if (ch.type === 'reading') {
+        ch.pieces.forEach(p => p.reading_questions.forEach(q => {
+          const sel = answers[q.id];
+          if (sel !== undefined && sel !== q.answer) wrongs.push(q);
+        }));
+      } else if (ch.type === 'grammar') {
+        ch.questions.forEach(q => {
+          const sel = answers[q.id];
+          if (sel !== undefined && sel !== q.answer) wrongs.push(q);
+        });
+      }
+    });
     setWrongAnswers(wrongs);
 
-    // حفظ user_results
-    const { error: resultErr } = await supabase
-      .from('user_results')
-      .insert({
-        attempt_id: attemptId,
-        score: totalScore,
-        total_questions: totalQuestions,
-        percentage
-      });
-    if (resultErr) console.error('Error saving user result:', resultErr);
+    // إدخال النتيجة في جدول user_results
+    if (attemptId) {
+      const { error: resultErr } = await supabase
+        .from('user_results')
+        .insert({
+          attempt_id: attemptId,
+          score: totalScore,
+          total_questions: totalQuestions,
+          percentage
+        });
+      if (resultErr) {
+        console.error('Error saving user result:', resultErr);
+      }
 
-    // تحديث completed_at
-    const { error: completeErr } = await supabase
-      .from('test_attempts')
-      .update({ completed_at: new Date().toISOString() })
-      .eq('id', attemptId);
-    if (completeErr) console.error('Error updating attempt completion time:', completeErr);
+      // تحديث وقت الإكمال في test_attempts
+      const { error: completeErr } = await supabase
+        .from('test_attempts')
+        .update({ completed_at: new Date().toISOString() })
+        .eq('id', attemptId);
+      if (completeErr) {
+        console.error('Error updating attempt completion time:', completeErr);
+      }
+    }
   };
 
   const handleNext = async () => {
     if (!currentChapter) return;
 
     if (currentChapter.type === 'listening') {
+      // تبسيط التدفق: من intro مباشرة إلى questions
       if (phase === 'intro') {
         setPhase('questions');
         return;
@@ -289,6 +303,7 @@ export default function TestPage() {
       if (currentPieceIndex < last) {
         setCurrentPieceIndex(i => i + 1);
       } else {
+        // عند انتهاء القواعد: نحسب النتائج، نحفظ user_results، نحدّث completed_at ثم نظهر صفحة النتائج
         await finalizeScoresAndWrongs();
         setShowResult(true);
       }
@@ -322,7 +337,7 @@ export default function TestPage() {
   }
 
   if (showResult) {
-    return <ResultsPage scores={scores} wrongAnswers={wrongAnswers} answers={answers} router={router} attemptId={attemptId} />;
+    return <ResultsPage scores={scores} wrongAnswers={wrongAnswers} answers={answers} router={router} />;
   }
 
   return (
@@ -369,6 +384,7 @@ export default function TestPage() {
             )}
             {phase === 'questions' && (
               <div className="max-w-4xl mx-auto space-y-6">
+                {/* تشغيل الصوت فوق الأسئلة إن رغبت */}
                 <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
                   <audio controls className="w-full">
                     <source src={currentChapter.pieces[currentPieceIndex].audio_url} type="audio/mpeg" />
@@ -425,6 +441,7 @@ export default function TestPage() {
         {/* Reading Chapter */}
         {currentChapter?.type === 'reading' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Passage */}
             <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 max-h-[70vh] overflow-y-auto">
               <h3 className="text-xl font-bold text-slate-900 mb-4">
                 {currentChapter.pieces[currentPieceIndex].passage_title}
@@ -434,6 +451,7 @@ export default function TestPage() {
               </div>
             </div>
 
+            {/* Questions */}
             <div className="space-y-6">
               {currentChapter.pieces[currentPieceIndex].reading_questions.map((q, qi) => (
                 <div key={q.id} className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
