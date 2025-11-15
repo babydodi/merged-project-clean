@@ -5,7 +5,7 @@ import { useSupabaseClient, useSession } from '@supabase/auth-helpers-react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/buttonn'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Play, RefreshCw } from 'lucide-react'
+import { Play, RefreshCw, Copy } from 'lucide-react'
 
 export default function StudentAnalyticsPage() {
   const supabase = useSupabaseClient()
@@ -72,11 +72,12 @@ export default function StudentAnalyticsPage() {
         }).sort((a, b) => new Date(b.date) - new Date(a.date))
       }
 
-      // 3) إحصاءات شخصية: عدد المحاولات وكل النتائج
-      const { count: attemptsCount = 0 } = await supabase
+      // 3) إحصاءات شخصية: عدد المحاولات
+      const attemptsCountRes = await supabase
         .from('test_attempts')
         .select('id', { count: 'exact', head: true })
-        .eq('user_id', userId) || { count: 0 }
+        .eq('user_id', userId)
+      const attemptsCount = attemptsCountRes?.count || 0
 
       // جلب كل نتائج المستخدم لحساب المتوسط (نحدّ من الاستعلام إذا بيانات كبيرة)
       const { data: allMyResults = [], error: myResultsErr } = await supabase
@@ -84,7 +85,6 @@ export default function StudentAnalyticsPage() {
         .select('percentage')
         .in('attempt_id', attemptIds.length ? attemptIds : ['-'])
       if (myResultsErr) {
-        // لا نوقف التنفيذ لو فشل هذا الاستعلام، نستخدم النتائج الأخيرة ك fallback
         console.warn('fetch personal results warning', myResultsErr)
       }
       const myAvgScore =
@@ -140,6 +140,16 @@ export default function StudentAnalyticsPage() {
   }
 
   const { subscription, myAttemptsCount, myAvgScore, recentResults, recommendedTests } = stats
+
+  const copyReviewLink = (attemptId) => {
+    try {
+      const url = `${window.location.origin}/attempts/${attemptId}/review`
+      navigator.clipboard.writeText(url)
+      // يمكنك إضافة إشعار toast هنا حسب النظام عندك
+    } catch (e) {
+      console.error('copy failed', e)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] p-6">
@@ -229,14 +239,28 @@ export default function StudentAnalyticsPage() {
                 {recentResults.map(r => (
                   <div key={r.id} className="flex items-center justify-between p-3 bg-[#0a0a0a] rounded-md border border-[#2a2a2a]">
                     <div>
-                      <div className="text-sm text-gray-400">Test ID: {String(r.test_id).slice(0,8)}</div>
+                      <div className="text-sm text-gray-400">Attempt: {String(r.attempt_id).slice(0,8)}</div>
                       <div className="text-white font-medium">{r.percentage}% • {r.score}/{r.total_questions}</div>
                       <div className="text-xs text-gray-500">{new Date(r.date).toLocaleString()}</div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Button size="sm" onClick={() => router.push(`/my-test/${r.test_id}`)} className="bg-white text-black">
+                      <Button
+                        size="sm"
+                        onClick={() => router.push(`/attempts/${r.attempt_id}/review`)}
+                        className="bg-white text-black"
+                      >
                         <Play className="w-4 h-4 mr-2" />
-                        Review
+                        راجع محاولتي
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => copyReviewLink(r.attempt_id)}
+                        className="flex items-center gap-2"
+                      >
+                        <Copy className="w-4 h-4" />
+                        نسخ رابط
                       </Button>
                     </div>
                   </div>
