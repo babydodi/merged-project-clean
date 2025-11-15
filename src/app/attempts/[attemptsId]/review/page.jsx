@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { Button } from '../../../components/ui/buttonn';
+import { Button } from '../../../../components/ui/buttonn';
 
 export default function AttemptReviewPage() {
   const { attemptId } = useParams();
