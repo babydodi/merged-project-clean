@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { Volume2, ChevronRight, Lightbulb, Home } from 'lucide-react';
-import { Button } from '../../../components/ui/button';
+import { Button } from '../../../components/ui/buttonn';
 import HintModal from '../../../components/HintModal';
 import ResultsPage from '../../../components/ResultsPage';
 
