@@ -126,7 +126,7 @@ export default function TestPage() {
         } else if (ch.type === 'grammar') {
           const { data: questions, error: gErr } = await supabase
             .from('grammar_questions')
-            .select('id, question_text, options, answer, hint, explanation, idx, is_vocabulary, category')
+            .select('id, question_text, options, answer, hint, explanation, idx, category')
             .eq('chapter_id', ch.id)
             .order('idx', { ascending: true });
           if (gErr) throw gErr;
@@ -225,7 +225,7 @@ export default function TestPage() {
     return qIds;
   };
 
-  // حساب النتائج النهائي مع أوزان وقسم Vocabulary داخل القواعد
+  // دالة حساب النتائج مع اعتماده على field category لنوع الـ vocab
   const finalizeScoresAndWrongs = async () => {
     if (!attemptId) return;
 
@@ -246,18 +246,17 @@ export default function TestPage() {
 
     const grammarQuestionIds = attemptsRows.filter(r => r.question_type === 'grammar').map(r => r.question_id);
 
-    // جلب ميتاداتا قواعد لتحديد is_vocabulary (إذا موجود)
+    // جلب category من جدول grammar_questions
     let grammarMeta = {};
     if (grammarQuestionIds.length) {
       const { data: gQs = [], error: gErr } = await supabase
         .from('grammar_questions')
-        .select('id, is_vocabulary, category, answer')
+        .select('id, category, answer')
         .in('id', grammarQuestionIds);
       if (gErr) console.error('fetch grammar metadata error', gErr);
       (gQs || []).forEach(q => { grammarMeta[q.id] = q; });
     }
 
-    // تجميع
     for (const r of attemptsRows) {
       if (r.question_type === 'listening') {
         stats.listening.total += 1;
@@ -270,7 +269,7 @@ export default function TestPage() {
         if (r.is_correct) stats.grammar.correct += 1;
 
         const meta = grammarMeta[r.question_id];
-        const isVocab = meta ? (meta.is_vocabulary || meta.category === 'vocab') : false;
+        const isVocab = meta ? (String(meta.category).toLowerCase() === 'vocab' || String(meta.category).toLowerCase() === 'vocabulary') : false;
         if (isVocab) {
           stats.grammar.vocab_total += 1;
           if (r.is_correct) stats.grammar.vocab_correct += 1;
@@ -278,9 +277,8 @@ export default function TestPage() {
       }
     }
 
-    // أوزان
     const weights = { listening: 20, reading: 40, grammar: 40 };
-    const grammarVocabWeight = weights.grammar * 0.10; // 10% من قواعد = 4
+    const grammarVocabWeight = weights.grammar * 0.10; // 4
     const grammarNonVocabWeight = weights.grammar - grammarVocabWeight; // 36
 
     const pct = (correct, total) => (total ? (correct / total) : 0);
@@ -306,7 +304,7 @@ export default function TestPage() {
     const wrongQuestionIds = wrongRows.map(r => r.question_id);
     setWrongAnswers(wrongQuestionIds);
 
-    // حفظ user_results إن لم تكن موجودة
+    // حفظ النتائج إن لم تكن موجودة
     const { data: existing = [], error: exErr } = await supabase
       .from('user_results')
       .select('id')
