@@ -140,7 +140,7 @@ export default function Dashboard() {
   // Sidebar items with navigation
   const sidebarItems = [
     { icon: Home, label: 'Dashboard / لوحة التحكم', action: () => router.push('/') , active: true },
-    { icon: BookOpen, label: 'My Tests / اختباراتى', action: () => router.push('/my-test/') , active: false },
+    { icon: BookOpen, label: 'My Tests / اختباراتى', action: () => router.push('/test/') , active: false },
     { icon: BarChart3, label: 'Analytics / تحليلات', action: () => router.push('/analytics') , active: false },
     { icon: ClockIcon, label: 'Schedule / الجدول', action: () => router.push('/schedule') , active: false },
     { icon: Settings, label: 'Settings / الإعدادات', action: () => router.push('/settings') , active: false },
@@ -315,7 +315,7 @@ export default function Dashboard() {
                       size="sm"
                       variant="outline"
                       className="border-[#2a2a2a] text-gray-400 hover:bg-[#1a1a1a] hover:text-white"
-                      onClick={() => router.push('/my-test/')}
+                      onClick={() => router.push('/test/')}
                     >
                       View All / عرض الكل
                     </Button>
@@ -351,7 +351,7 @@ export default function Dashboard() {
                               </span>
                             </div>
                           </div>
-                          <Button className="bg-white text-black hover:bg-gray-200 transition-colors" onClick={() => router.push(`/my-test/${test.id}`)}>
+                          <Button className="bg-white text-black hover:bg-gray-200 transition-colors" onClick={() => router.push(`/test/${test.id}`)}>
                             <Play className="w-4 h-4 mr-2" />
                             Start / ابدأ
                           </Button>
