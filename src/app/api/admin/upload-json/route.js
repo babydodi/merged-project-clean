@@ -3,10 +3,45 @@ import { NextResponse } from "next/server";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 
+/*
+  نسخة محدثة من الـ route تدعم جميع الحقول المذكورة في مخطط القاعدة:
+  - grammar_questions: category, base_text, underlined_words, underlined_positions, explanation (json)
+  - reading_questions: base_text, underlined_words, underlined_positions, explanation (json)
+  - listening_questions: explanation (json), hint
+  ويتضمن تحقق بسيط من الصيغة وصلاحية المستخدم (admin).
+*/
+
+async function requireAdmin(supabase) {
+  // يحصل على user من الجلسة ثم يقرأ دوره من جدول users
+  const {
+    data: { user },
+    error: userErr,
+  } = await supabase.auth.getUser();
+
+  if (userErr || !user) throw new Error("غير مسموح: اليوزر غير مسجل");
+
+  // جلب دور المستخدم من جدول users (أو من ملف metadata إن اعتمدت ذلك)
+  const { data, error } = await supabase
+    .from("users")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+
+  if (error) throw new Error("فشل التحقق من صلاحية المستخدم");
+  if (!data || data.role !== "admin") throw new Error("غير مسموح: مطلوب دور admin");
+}
+
+function ensureArray(x) {
+  return Array.isArray(x) ? x : [];
+}
+
 export async function POST(req) {
   const supabase = createRouteHandlerClient({ cookies });
 
   try {
+    // تحقق صلاحية الـ admin
+    await requireAdmin(supabase);
+
     const body = await req.json();
     const { title, description, availability, is_published, chapters } = body;
 
@@ -17,7 +52,7 @@ export async function POST(req) {
       return NextResponse.json({ success: false, error: "chapters يجب أن تكون مصفوفة وغير فارغة" }, { status: 400 });
     }
 
-    // 1) إدراج الاختبار
+    // إدراج الاختبار
     const { data: testRow, error: testError } = await supabase
       .from("tests")
       .insert({
@@ -31,13 +66,13 @@ export async function POST(req) {
 
     if (testError) throw testError;
 
-    // 2) لكل فصل — إدراج الفصل ثم محتوياته بحسب النوع
+    // تصفح الفصول
     for (const chapter of chapters) {
-      // تأكد من الحقول الأساسية
       const chIdx = typeof chapter.idx === "number" ? chapter.idx : null;
       const chType = chapter.type || null;
       if (!chType) throw new Error("chapter.type مفقود في أحد الفصول");
 
+      // إدراج السجل في جدول chapters
       const { data: chapterRow, error: chapterError } = await supabase
         .from("chapters")
         .insert({
@@ -52,29 +87,34 @@ export async function POST(req) {
 
       if (chapterError) throw chapterError;
 
-      // GRAMMAR
+      // ===== GRAMMAR =====
       if (chType === "grammar") {
-        for (const q of chapter.questions || []) {
-          const { error: qError } = await supabase.from("grammar_questions").insert({
+        const questions = ensureArray(chapter.questions);
+        for (const q of questions) {
+          // احفظ كل الحقول ذات الصلة من المخطط
+          const payload = {
             chapter_id: chapterRow.id,
             idx: typeof q.idx === "number" ? q.idx : null,
             question_text: q.question_text || null,
-            options: q.options || [], // jsonb
+            options: q.options || [],
             answer: q.answer != null ? String(q.answer) : null,
-            explanation: q.explanation || null, // can be object or text
             hint: q.hint || null,
+            explanation: q.explanation || null, // يمكن أن يكون { ar, en }
             category: q.category || null,
             base_text: q.base_text || null,
-            underlined_words: q.underlined_words || null, // jsonb or null
-            underlined_positions: q.underlined_positions || null, // jsonb or null
-          });
+            underlined_words: q.underlined_words || null,
+            underlined_positions: q.underlined_positions || null,
+          };
+
+          const { error: qError } = await supabase.from("grammar_questions").insert(payload);
           if (qError) throw qError;
         }
       }
 
-      // READING
+      // ===== READING =====
       if (chType === "reading") {
-        for (const piece of chapter.pieces || []) {
+        const pieces = ensureArray(chapter.pieces);
+        for (const piece of pieces) {
           const { data: pieceRow, error: pieceError } = await supabase
             .from("reading_pieces")
             .insert({
@@ -88,27 +128,30 @@ export async function POST(req) {
 
           if (pieceError) throw pieceError;
 
-          for (const q of piece.questions || []) {
-            const { error: qError } = await supabase.from("reading_questions").insert({
+          const questions = ensureArray(piece.questions);
+          for (const q of questions) {
+            const payload = {
               reading_piece_id: pieceRow.id,
               idx: typeof q.idx === "number" ? q.idx : null,
               question_text: q.question_text || null,
               options: q.options || [],
               answer: q.answer != null ? String(q.answer) : null,
-              explanation: q.explanation || null,
               hint: q.hint || null,
+              explanation: q.explanation || null,
               base_text: q.base_text || null,
               underlined_words: q.underlined_words || null,
               underlined_positions: q.underlined_positions || null,
-            });
+            };
+            const { error: qError } = await supabase.from("reading_questions").insert(payload);
             if (qError) throw qError;
           }
         }
       }
 
-      // LISTENING
+      // ===== LISTENING =====
       if (chType === "listening") {
-        for (const piece of chapter.pieces || []) {
+        const pieces = ensureArray(chapter.pieces);
+        for (const piece of pieces) {
           const { data: pieceRow, error: pieceError } = await supabase
             .from("listening_pieces")
             .insert({
@@ -122,16 +165,18 @@ export async function POST(req) {
 
           if (pieceError) throw pieceError;
 
-          for (const q of piece.questions || []) {
-            const { error: qError } = await supabase.from("listening_questions").insert({
+          const questions = ensureArray(piece.questions);
+          for (const q of questions) {
+            const payload = {
               listening_piece_id: pieceRow.id,
               idx: typeof q.idx === "number" ? q.idx : null,
               question_text: q.question_text || null,
               options: q.options || [],
               answer: q.answer != null ? String(q.answer) : null,
-              explanation: q.explanation || null,
               hint: q.hint || null,
-            });
+              explanation: q.explanation || null,
+            };
+            const { error: qError } = await supabase.from("listening_questions").insert(payload);
             if (qError) throw qError;
           }
         }
