@@ -2,33 +2,9 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-/**
- * Robust upload-json route for App Router
- * - Creates Supabase client at runtime (prevents build-time failure)
- * - Normalizes incoming JSON shapes
- * - Picks only allowed DB columns per table (matches schema you provided)
- * - Returns detailed per-chapter errors (message + stack)
- * - Emits server logs for debugging (console.error)
- *
- * Requirements (ensure these exist in the runtime env):
- * - SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL)
- * - SUPABASE_SERVICE_ROLE_KEY (or NEXT_PUBLIC_SUPABASE_ANON_KEY as fallback)
- *
- * Schema expectations (from your provided schema):
- * - chapters(test_id, idx)
- * - listening_pieces(chapter_id, idx)
- * - listening_questions(listening_piece_id, idx)
- * - reading_pieces(chapter_id, idx)
- * - reading_questions(reading_piece_id, idx)
- * - grammar_questions(chapter_id, idx)
- *
- * If you want these ON CONFLICT upserts to succeed, ensure the corresponding UNIQUE constraints exist.
- */
-
 function ensureArray(x) {
   return Array.isArray(x) ? x : [];
 }
-
 function pick(obj, keys) {
   const out = {};
   for (const k of keys) if (obj[k] !== undefined) out[k] = obj[k];
@@ -43,10 +19,8 @@ function normalizeListeningQuestion(q) {
     answer: q.answer != null ? q.answer : null,
     hint: q.hint ?? null,
     explanation: q.explanation ?? null
-    // base_text and underlined_* intentionally omitted for listening_questions (not in your schema)
   };
 }
-
 function normalizeReadingQuestion(q) {
   return {
     idx: q.idx ?? null,
@@ -60,7 +34,6 @@ function normalizeReadingQuestion(q) {
     underlined_positions: ensureArray(q.underlined_positions)
   };
 }
-
 function normalizeGrammarQuestion(q) {
   return {
     idx: q.idx ?? null,
@@ -75,7 +48,6 @@ function normalizeGrammarQuestion(q) {
     underlined_positions: ensureArray(q.underlined_positions)
   };
 }
-
 function normalizeListeningPiece(piece) {
   return {
     idx: piece.idx ?? null,
@@ -84,7 +56,6 @@ function normalizeListeningPiece(piece) {
     listening_questions: ensureArray(piece.listening_questions || piece.questions).map(normalizeListeningQuestion)
   };
 }
-
 function normalizeReadingPiece(piece) {
   return {
     idx: piece.idx ?? null,
@@ -93,7 +64,6 @@ function normalizeReadingPiece(piece) {
     reading_questions: ensureArray(piece.reading_questions || piece.questions).map(normalizeReadingQuestion)
   };
 }
-
 function normalizeChapter(ch) {
   const base = {
     idx: ch.idx ?? null,
@@ -101,13 +71,38 @@ function normalizeChapter(ch) {
     title: ch.title ?? null,
     duration_seconds: ch.duration_seconds ?? null
   };
-
   if (ch.type === 'listening') base.pieces = ensureArray(ch.pieces).map(normalizeListeningPiece);
   else if (ch.type === 'reading') base.pieces = ensureArray(ch.pieces).map(normalizeReadingPiece);
   else if (ch.type === 'grammar') base.questions = ensureArray(ch.questions).map(normalizeGrammarQuestion);
   else base.raw = ch;
-
   return base;
+}
+
+function getSupabaseClient() {
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY (or NEXT_PUBLIC fallback) env vars');
+  return createClient(url, key, { auth: { persistSession: false } });
+}
+
+async function ensureTestRow(supabase, testPayload) {
+  if (!testPayload) return null;
+
+  const testRow = {
+    title: testPayload.title ?? 'اختبار بدون عنوان',
+    description: testPayload.description ?? null,
+    availability: testPayload.availability ?? 'all',
+    is_published: testPayload.is_published ?? false
+  };
+
+  const { data, error } = await supabase
+    .from('tests')
+    .insert(testRow)
+    .select('id')
+    .single();
+
+  if (error) throw error;
+  return data?.id;
 }
 
 async function upsertChapterRow(supabase, test_id, ch) {
@@ -129,17 +124,6 @@ async function upsertChapterRow(supabase, test_id, ch) {
   return data?.id;
 }
 
-function getSupabaseClient() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!url || !key) {
-    throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY (or NEXT_PUBLIC fallback) env vars');
-  }
-
-  return createClient(url, key, { auth: { persistSession: false } });
-}
-
 export async function POST(request) {
   try {
     const contentType = request.headers.get('content-type') || '';
@@ -147,31 +131,33 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Please send JSON body (Content-Type: application/json)' }, { status: 400 });
     }
 
-    const payload = await request.json().catch(e => {
-      console.error('Failed to parse JSON body', e);
-      return null;
-    });
-
+    const payload = await request.json();
     if (!payload || !payload.chapters) {
       return NextResponse.json({ error: 'Missing chapters in JSON payload' }, { status: 400 });
     }
 
-    // create supabase client at runtime
     let supabase;
     try {
       supabase = getSupabaseClient();
     } catch (e) {
-      console.error('Supabase client creation error', e);
       return NextResponse.json({ error: 'Server configuration error: missing Supabase env vars', detail: e.message }, { status: 500 });
     }
 
     const incomingChapters = Array.isArray(payload.chapters) ? payload.chapters : [payload.chapters];
     const normalizedChapters = incomingChapters.map(normalizeChapter);
-    const test_id = payload.test_id ?? null;
+
+    // test handling: prefer provided test_id, otherwise create test from payload.test
+    let test_id = payload.test_id ?? null;
+    let createdTestId = null;
+    if (!test_id && payload.test) {
+      createdTestId = await ensureTestRow(supabase, payload.test);
+      test_id = createdTestId;
+    }
 
     const results = { chapters: [], errors: [] };
+    if (createdTestId) results.testId = createdTestId;
 
-    // allowed columns per table (match your DB schema)
+    // allowed columns per table
     const LISTENING_PIECE_COLS = ['chapter_id', 'idx', 'audio_url', 'transcript'];
     const LISTENING_QUESTION_COLS = ['listening_piece_id', 'idx', 'question_text', 'options', 'answer', 'hint', 'explanation'];
     const READING_PIECE_COLS = ['chapter_id', 'idx', 'passage_title', 'passage'];
@@ -182,7 +168,6 @@ export async function POST(request) {
       try {
         const chapterId = await upsertChapterRow(supabase, test_id, ch);
 
-        // LISTENING
         if (ch.type === 'listening') {
           for (const p of ch.pieces || []) {
             const pieceRow = pick({ chapter_id: chapterId, ...p }, LISTENING_PIECE_COLS);
@@ -196,7 +181,6 @@ export async function POST(request) {
               .eq('idx', p.idx)
               .limit(1)
               .single();
-
             if (findPieceErr) throw findPieceErr;
             const listening_piece_id = foundPiece?.id;
 
@@ -204,7 +188,6 @@ export async function POST(request) {
               const normalized = normalizeListeningQuestion(q);
               return pick({ listening_piece_id, ...normalized }, LISTENING_QUESTION_COLS);
             });
-
             if (questionRows.length) {
               const { error: qErr } = await supabase.from('listening_questions').upsert(questionRows, { onConflict: ['listening_piece_id', 'idx'] });
               if (qErr) throw qErr;
@@ -212,7 +195,6 @@ export async function POST(request) {
           }
         }
 
-        // READING
         if (ch.type === 'reading') {
           for (const p of ch.pieces || []) {
             const pieceRow = pick({ chapter_id: chapterId, ...p }, READING_PIECE_COLS);
@@ -226,7 +208,6 @@ export async function POST(request) {
               .eq('idx', p.idx)
               .limit(1)
               .single();
-
             if (findPieceErr) throw findPieceErr;
             const reading_piece_id = foundPiece?.id;
 
@@ -234,7 +215,6 @@ export async function POST(request) {
               const normalized = normalizeReadingQuestion(q);
               return pick({ reading_piece_id, ...normalized }, READING_QUESTION_COLS);
             });
-
             if (questionRows.length) {
               const { error: qErr } = await supabase.from('reading_questions').upsert(questionRows, { onConflict: ['reading_piece_id', 'idx'] });
               if (qErr) throw qErr;
@@ -242,13 +222,11 @@ export async function POST(request) {
           }
         }
 
-        // GRAMMAR
         if (ch.type === 'grammar') {
           const questionRows = (ch.questions || []).map(q => {
             const normalized = normalizeGrammarQuestion(q);
             return pick({ chapter_id: chapterId, ...normalized }, GRAMMAR_QUESTION_COLS);
           });
-
           if (questionRows.length) {
             const { error: gErr } = await supabase.from('grammar_questions').upsert(questionRows, { onConflict: ['chapter_id', 'idx'] });
             if (gErr) throw gErr;
@@ -257,19 +235,16 @@ export async function POST(request) {
 
         results.chapters.push({ type: ch.type, idx: ch.idx, chapterId });
       } catch (chError) {
-        console.error('Chapter processing error:', ch.idx ?? ch.title ?? null, chError);
         results.errors.push({
           chapter: ch.idx ?? ch.title ?? null,
           message: chError?.message ?? String(chError),
           stack: chError?.stack ?? null
         });
-        // continue to next chapter
       }
     }
 
     return NextResponse.json({ ok: true, results }, { status: 200 });
   } catch (err) {
-    console.error('Upload error', err);
     return NextResponse.json({ error: err?.message ?? String(err), stack: err?.stack ?? null }, { status: 500 });
   }
 }
