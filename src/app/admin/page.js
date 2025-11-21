@@ -1,324 +1,230 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import React, { useState } from 'react';
 
-export default function AdminTestsPage() {
-  const router = useRouter();
-  const supabase = createClientComponentClient();
-
-  const [tests, setTests] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  // حقول الرفع
-  const [title, setTitle] = useState('');
+export default function UploadJsonPage() {
   const [description, setDescription] = useState('');
-  const [grammarFile, setGrammarFile] = useState(null);
-  const [readingFile, setReadingFile] = useState(null);
-  const [listeningFile, setListeningFile] = useState(null);
-  const [fullFile, setFullFile] = useState(null);
-  const [uploading, setUploading] = useState(false);
-  const [message, setMessage] = useState('');
+  const [fileGrammar, setFileGrammar] = useState(null);
+  const [fileReading, setFileReading] = useState(null);
+  const [fileListening, setFileListening] = useState(null);
+  const [fileFull, setFileFull] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState(null);
+  const [detailedErrors, setDetailedErrors] = useState(null);
 
-  useEffect(() => {
-    loadTests();
-  }, []);
+  // helpers
+  const readFileAsJson = (file) =>
+    new Promise((resolve, reject) => {
+      if (!file) return resolve(null);
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const text = reader.result;
+          const json = text ? JSON.parse(text) : null;
+          resolve(json);
+        } catch (err) {
+          reject(new Error(`Invalid JSON in ${file.name}: ${err.message}`));
+        }
+      };
+      reader.onerror = () => reject(new Error(`Failed to read file ${file.name}`));
+      reader.readAsText(file);
+    });
 
-  const loadTests = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('tests')
-        .select('id, title, description, availability, created_at')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('loadTests error', error);
-        setTests([]);
-      } else {
-        setTests(data || []);
+  const buildPayload = async () => {
+    // If full file provided, prefer it (but still allow separate files to merge)
+    let payload = { test: null, chapters: [] };
+    if (fileFull) {
+      const fullJson = await readFileAsJson(fileFull);
+      if (!fullJson) throw new Error('Full file is empty or invalid JSON');
+      payload = fullJson;
+    } else {
+      // merge separate files
+      if (fileGrammar) {
+        const g = await readFileAsJson(fileGrammar);
+        if (g) {
+          if (Array.isArray(g.chapters)) payload.chapters.push(...g.chapters);
+          else if (g.questions || g.chapter) payload.chapters.push(g);
+          else payload.chapters.push(...(g?.grammar ? g.grammar : []));
+        }
       }
+      if (fileReading) {
+        const r = await readFileAsJson(fileReading);
+        if (r) {
+          if (Array.isArray(r.chapters)) payload.chapters.push(...r.chapters);
+          else if (r.pieces || r.chapter) payload.chapters.push(r);
+          else payload.chapters.push(...(r?.reading ? r.reading : []));
+        }
+      }
+      if (fileListening) {
+        const l = await readFileAsJson(fileListening);
+        if (l) {
+          if (Array.isArray(l.chapters)) payload.chapters.push(...l.chapters);
+          else if (l.pieces || l.chapter) payload.chapters.push(l);
+          else payload.chapters.push(...(l?.listening ? l.listening : []));
+        }
+      }
+      // remove empty entries
+      payload.chapters = payload.chapters.filter(Boolean);
+    }
+
+    // attach optional metadata
+    if (description) payload.test = payload.test ?? {};
+    if (description) payload.test.description = description;
+
+    if (!payload.chapters || payload.chapters.length === 0) {
+      throw new Error('No chapters found in selected files');
+    }
+
+    return payload;
+  };
+
+  const handleUpload = async (e) => {
+    e.preventDefault();
+    setMessage(null);
+    setDetailedErrors(null);
+    setLoading(true);
+
+    try {
+      const payload = await buildPayload();
+
+      console.info('Uploading payload (preview):', {
+        chaptersCount: (payload.chapters || []).length,
+        test: payload.test ?? null
+      });
+
+      const res = await fetch('/api/admin/upload-json', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const raw = await res.text();
+      let body;
+      try {
+        body = raw ? JSON.parse(raw) : null;
+      } catch (err) {
+        console.error('upload-json raw response (non-json):', raw);
+        throw new Error(`Server returned non-JSON response (status ${res.status}). See console.`);
+      }
+
+      console.info('upload-json status', res.status, 'body', body);
+
+      // handle common response shapes from our route
+      if (!body) throw new Error('Empty response from server');
+
+      if (body.error) {
+        console.error('upload-json returned error', body);
+        setMessage(`❌ خطأ من السيرفر: ${body.error}`);
+        if (body.stack) setDetailedErrors(body.stack);
+        setLoading(false);
+        return;
+      }
+
+      if (body.results) {
+        // log full details for debugging
+        console.group('upload-json results');
+        console.log('chapters:', body.results.chapters || []);
+        console.log('errors:', body.results.errors || []);
+        console.groupEnd();
+
+        if (body.results.errors && body.results.errors.length > 0) {
+          setMessage(`⚠️ تم الرفع جزئياً — وجد أخطاء في ${body.results.errors.length} فصل. راجع التفاصيل في الكونسول.`);
+          setDetailedErrors(body.results.errors);
+          setLoading(false);
+          return;
+        }
+
+        // success
+        setMessage('✅ تم رفع الملف بنجاح');
+        setDetailedErrors(null);
+        setLoading(false);
+        return;
+      }
+
+      // fallback
+      setMessage('✅ تم معالجة الرد (تحقق من الكونسول لمزيد من التفاصيل)');
+      setLoading(false);
     } catch (err) {
-      console.error('loadTests exception', err);
-      setTests([]);
-    } finally {
+      console.error('Upload client error', err);
+      setMessage(`❌ خطأ أثناء الرفع: ${err.message}`);
       setLoading(false);
     }
   };
 
-  // ------------------------------
-  // دوال مساعدة آمنة لتحليل الملفات إلى مصفوفة فصول
-  // ------------------------------
-  const parseFileToChapters = async (file) => {
-    // دائمًا تعيد مصفوفة (حتى لو فشل التحليل) لمنع أخطاء "not iterable"
-    if (!file) return [];
-    try {
-      const text = await file.text();
-      const json = JSON.parse(text);
-
-      // حالة: body.chapters: [ ... ]
-      if (Array.isArray(json.chapters) && json.chapters.length) return json.chapters;
-
-      // حالة: الملف نفسه قد يكون مصفوفة من الفصول
-      if (Array.isArray(json) && json.length) return json;
-
-      // حالة: body.chapter: { ... } -> [ chapter ]
-      if (json.chapter && typeof json.chapter === 'object') return [json.chapter];
-
-      // حالة: الملف نفسه قد يمثل فصل مفرد يحتوي questions أو pieces
-      if (json && typeof json === 'object' && (Array.isArray(json.questions) || Array.isArray(json.pieces))) {
-        return [json];
-      }
-
-      // لا نجد بنية فصل واضحة -> رجّع مصفوفة فارغة
-      return [];
-    } catch (err) {
-      // لا نُرمِ الاستثناء لكي لا يكسر تدفق الرفع؛ نرجع مصفوفة فارغة ونطبع الخطأ
-      console.error('parseFileToChapters error for', file?.name, err);
-      return [];
-    }
-  };
-
-  const safeSpread = (x) => (Array.isArray(x) ? x : []);
-
-  const normalizeChapter = (ch) => {
-    const chapter = { ...ch };
-    if (!chapter.type) {
-      if (Array.isArray(chapter.questions)) chapter.type = 'grammar';
-      else if (Array.isArray(chapter.pieces)) {
-        const firstPiece = Array.isArray(chapter.pieces) ? chapter.pieces[0] : null;
-        if (firstPiece && (firstPiece.audio_url || firstPiece.transcript)) chapter.type = 'listening';
-        else chapter.type = 'reading';
-      } else chapter.type = 'unknown';
-    }
-    chapter.idx = typeof chapter.idx === 'number' ? chapter.idx : null;
-    chapter.title = chapter.title || null;
-    chapter.duration_seconds = typeof chapter.duration_seconds === 'number' ? chapter.duration_seconds : null;
-    return chapter;
-  };
-
-  // ------------------------------
-  // الدالة الرئيسية لرفع الملفات
-  // ------------------------------
-  const handleUpload = async () => {
-    // تحقق مبكر
-    if (!title) {
-      setMessage('❌ العنوان مطلوب');
-      return;
-    }
-    if (!grammarFile && !readingFile && !listeningFile && !fullFile) {
-      setMessage('❌ اختر على الأقل ملف واحد (Grammar / Reading / Listening / Full)');
-      return;
-    }
-
-    setUploading(true);
-    setMessage('');
-
-    try {
-      let chapters = [];
-
-      if (fullFile) {
-        // الملف الكامل يفترض أن يحتوي root.chapters أو فصل واحد
-        const parsed = await parseFileToChapters(fullFile);
-        chapters = parsed;
-      } else {
-        // ملفات منفصلة: أرسلها كلها إلى parse في نفس الوقت
-        const [grammarChapters, readingChapters, listeningChapters] = await Promise.all([
-          parseFileToChapters(grammarFile),
-          parseFileToChapters(readingFile),
-          parseFileToChapters(listeningFile),
-        ]);
-
-        // طباعة تصحيحية لمساعدتك أثناء التطوير
-        console.log('parsed chapters counts:', {
-          g: grammarChapters.length,
-          r: readingChapters.length,
-          l: listeningChapters.length,
-        });
-        console.log('sample parsed contents:', {
-          grammarSample: grammarChapters[0],
-          readingSample: readingChapters[0],
-          listeningSample: listeningChapters[0],
-        });
-
-        chapters = [
-          ...safeSpread(grammarChapters),
-          ...safeSpread(readingChapters),
-          ...safeSpread(listeningChapters),
-        ];
-      }
-
-      // تطبيع الفصول وفحص وجود أسئلة أو pieces
-      const normalized = chapters.map(normalizeChapter);
-      const filtered = normalized.filter((c) => {
-        const hasQuestions = Array.isArray(c.questions) && c.questions.length > 0;
-        const hasPieces = Array.isArray(c.pieces) && c.pieces.length > 0;
-        if (!hasQuestions && !hasPieces) {
-          console.warn('Filtered out chapter (no questions/pieces):', c);
-        }
-        return hasQuestions || hasPieces;
-      });
-
-      console.log('final chapters after normalize & filter count:', filtered.length);
-
-      if (!filtered.length) {
-        setMessage('❌ لا توجد فصول/أسئلة صالحة في الملفات المرفوعة');
-        setUploading(false);
-        return;
-      }
-
-      // تجهيز الجسم للـ API
-      const body = {
-        title,
-        description,
-        availability: 'all',
-        is_published: true,
-        chapters: filtered,
-      };
-
-      // طبع حجم payload لمراقبة المشاكل المحتملة الكبيرة
-      try {
-        const bodyStr = JSON.stringify(body);
-        console.log('payload size (chars):', bodyStr.length);
-      } catch (e) {
-        console.warn('Unable to stringify body for size check', e);
-      }
-
-      // إرسال إلى route
-      const res = await fetch('/api/admin/upload-json', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-
-      const data = await res.json();
-
-      if (data.success) {
-        setMessage(`✅ تم رفع الاختبار بنجاح (ID: ${data.test_id})`);
-        // إعادة تهيئة الحقول
-        setTitle('');
-        setDescription('');
-        setGrammarFile(null);
-        setReadingFile(null);
-        setListeningFile(null);
-        setFullFile(null);
-        // إعادة تحميل الاختبارات
-        loadTests();
-      } else {
-        // عرض رسالة مفصّلة إن وُجدت
-        console.error('upload-json response error', data);
-        setMessage(`❌ خطأ من السيرفر: ${data.error || 'غير معروف'}`);
-      }
-    } catch (err) {
-      console.error('handleUpload exception', err);
-      setMessage(`❌ حدث خطأ أثناء رفع الملفات: ${err.message || String(err)}`);
-    } finally {
-      setUploading(false);
-    }
-  };
-
   return (
-    <div className="p-8 max-w-6xl mx-auto" dir="rtl">
-      <h1 className="text-3xl font-bold mb-6">📋 لوحة تحكم الاختبارات</h1>
+    <div style={{ maxWidth: 920, margin: '24px auto', direction: 'rtl', textAlign: 'right', padding: 20 }}>
+      <h2 style={{ marginBottom: 12 }}>واجهة رفع JSON للاختبارات</h2>
 
-      <div className="bg-white shadow rounded-lg p-6 mb-10">
-        <h2 className="text-xl font-semibold mb-4">📤 رفع اختبار جديد</h2>
-
-        <div className="mb-4">
-          <label className="block mb-1 font-semibold">عنوان الاختبار</label>
+      <form onSubmit={handleUpload}>
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>الوصف</label>
           <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="w-full border rounded px-3 py-2"
-            placeholder="مثال: STEP Grammar Test"
-          />
-        </div>
-
-        <div className="mb-4">
-          <label className="block mb-1 font-semibold">الوصف</label>
-          <textarea
+            placeholder="اكتب وصف قصير للاختبار"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            className="w-full border rounded px-3 py-2"
-            placeholder="اكتب وصف قصير للاختبار"
+            style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #ddd' }}
           />
         </div>
 
-        <div className="mb-4">
-          <label className="block mb-1 font-semibold">📘 ملف Grammar</label>
-          <input type="file" accept=".json" onChange={(e) => setGrammarFile(e.target.files[0] ?? null)} />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div>
+            <label style={{ fontWeight: 600 }}>Grammar ملف</label>
+            <input type="file" accept=".json,application/json" onChange={(e) => setFileGrammar(e.target.files?.[0] ?? null)} />
+          </div>
+          <div>
+            <label style={{ fontWeight: 600 }}>Reading ملف</label>
+            <input type="file" accept=".json,application/json" onChange={(e) => setFileReading(e.target.files?.[0] ?? null)} />
+          </div>
+          <div>
+            <label style={{ fontWeight: 600 }}>Listening ملف</label>
+            <input type="file" accept=".json,application/json" onChange={(e) => setFileListening(e.target.files?.[0] ?? null)} />
+          </div>
+          <div>
+            <label style={{ fontWeight: 600 }}>ملف كامل (يشمل كل الأقسام)</label>
+            <input type="file" accept=".json,application/json" onChange={(e) => setFileFull(e.target.files?.[0] ?? null)} />
+          </div>
         </div>
 
-        <div className="mb-4">
-          <label className="block mb-1 font-semibold">📖 ملف Reading</label>
-          <input type="file" accept=".json" onChange={(e) => setReadingFile(e.target.files[0] ?? null)} />
+        <div style={{ marginTop: 16, display: 'flex', gap: 12 }}>
+          <button type="submit" disabled={loading} style={{ padding: '8px 16px', borderRadius: 6, background: '#0369a1', color: 'white', border: 'none' }}>
+            {loading ? 'جارِ الرفع...' : 'رفع الاختبار'}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setFileGrammar(null);
+              setFileReading(null);
+              setFileListening(null);
+              setFileFull(null);
+              setDescription('');
+              setMessage(null);
+              setDetailedErrors(null);
+            }}
+            style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', background: 'white' }}
+          >
+            مسح الحقول
+          </button>
         </div>
+      </form>
 
-        <div className="mb-4">
-          <label className="block mb-1 font-semibold">🎧 ملف Listening</label>
-          <input type="file" accept=".json" onChange={(e) => setListeningFile(e.target.files[0] ?? null)} />
+      {message && (
+        <div style={{ marginTop: 16, padding: 12, borderRadius: 8, background: '#fff8f0', border: '1px solid #ffd8a8' }}>
+          <div style={{ fontWeight: 700 }}>{message}</div>
+          {detailedErrors && (
+            <pre style={{ marginTop: 8, maxHeight: 320, overflow: 'auto', background: '#fff', padding: 8, borderRadius: 6 }}>
+              {typeof detailedErrors === 'string' ? detailedErrors : JSON.stringify(detailedErrors, null, 2)}
+            </pre>
+          )}
         </div>
+      )}
 
-        <div className="mb-4">
-          <label className="block mb-1 font-semibold">📂 ملف كامل (يشمل كل الأقسام)</label>
-          <input type="file" accept=".json" onChange={(e) => setFullFile(e.target.files[0] ?? null)} />
-        </div>
-
-        <button
-          onClick={handleUpload}
-          disabled={uploading}
-          className="px-4 py-2 bg-indigo-600 text-white rounded"
-        >
-          {uploading ? '⏳ جاري الرفع...' : 'رفع الاختبار'}
-        </button>
-
-        {message && <p className="mt-4">{message}</p>}
-      </div>
-
-      <div className="bg-white shadow rounded-lg p-6">
-        <h2 className="text-xl font-semibold mb-4">📚 قائمة الاختبارات</h2>
-
-        {loading ? (
-          <p>⏳ جاري التحميل...</p>
-        ) : tests.length === 0 ? (
-          <p>❌ لا توجد اختبارات حالياً</p>
-        ) : (
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="bg-gray-100 text-right">
-                <th className="p-2 border">#</th>
-                <th className="p-2 border">العنوان</th>
-                <th className="p-2 border">الوصف</th>
-                <th className="p-2 border">الحالة</th>
-                <th className="p-2 border">تاريخ الإنشاء</th>
-                <th className="p-2 border">إجراءات</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tests.map((test, idx) => (
-                <tr key={test.id} className="hover:bg-gray-50">
-                  <td className="p-2 border">{idx + 1}</td>
-                  <td className="p-2 border">{test.title}</td>
-                  <td className="p-2 border">{test.description}</td>
-                  <td className="p-2 border">{test.availability}</td>
-                  <td className="p-2 border">
-                    {new Date(test.created_at).toLocaleDateString('ar-SA')}
-                  </td>
-                  <td className="p-2 border">
-                    <button
-                      onClick={() => router.push(`/admin/tests/${test.id}`)}
-                      className="px-3 py-1 bg-blue-600 text-white rounded mr-2"
-                    >
-                      ✏️ تعديل
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+      <div style={{ marginTop: 18, color: '#666', fontSize: 13 }}>
+        ملاحظات:
+        <ul>
+          <li>فتح الكونسول (F12) للاطّلاع على تفاصيل الرد الخام من السيرفر (ستجد body و results.errors هناك)</li>
+          <li>إذا ظهر خطأ "Server configuration error" تأكد أن متغيرات البيئة SUPABASE_URL و SUPABASE_SERVICE_ROLE_KEY موجودة في بيئة التشغيل</li>
+          <li>إذا ظهر خطأ متعلق بقاعدة البيانات انسخ تفاصيل body.results.errors أو سجلات السيرفر وأرسلها لي لأعطيك تصحيح مباشر</li>
+        </ul>
       </div>
     </div>
   );
