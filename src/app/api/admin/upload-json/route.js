@@ -3,33 +3,34 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
 /**
- * Safe App Router POST route to upload a combined test JSON.
- * - Creates Supabase client at runtime (prevents build-time error)
- * - Normalizes different field names (transcript / passage / text, listening_questions / questions, etc.)
- * - Upserts chapters, pieces, and questions
- * - Collects and returns detailed per-chapter errors (message + stack) so the frontend can display exact causes
- *
- * Requirements:
- * - Set env vars in your deployment: SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) and
- *   SUPABASE_SERVICE_ROLE_KEY (or NEXT_PUBLIC_SUPABASE_ANON_KEY fallback).
- * - Ensure DB unique constraints used in onConflict exist (e.g., test_id+idx, chapter_id+idx, listening_piece_id+idx).
+ * Upload JSON route (App Router)
+ * - Create supabase client at runtime
+ * - Normalize incoming shapes
+ * - Pick only allowed columns per table before upsert
+ * - Return detailed per-chapter errors
  */
 
 function ensureArray(x) {
   return Array.isArray(x) ? x : [];
 }
 
+function pick(obj, keys) {
+  const out = {};
+  for (const k of keys) {
+    if (obj[k] !== undefined) out[k] = obj[k];
+  }
+  return out;
+}
+
 function normalizeListeningQuestion(q) {
   return {
     idx: q.idx ?? null,
     question_text: q.question_text ?? q.text ?? '',
-    options: ensureArray(q.options).map(String),
-    answer: q.answer != null ? String(q.answer) : null,
+    options: ensureArray(q.options),
+    answer: q.answer != null ? q.answer : null,
     hint: q.hint ?? null,
-    explanation: q.explanation ?? null,
-    base_text: q.base_text ?? null,
-    underlined_words: ensureArray(q.underlined_words),
-    underlined_positions: ensureArray(q.underlined_positions)
+    explanation: q.explanation ?? null
+    // intentionally exclude base_text / underlined_* for listening_questions (not in schema)
   };
 }
 
@@ -37,8 +38,8 @@ function normalizeReadingQuestion(q) {
   return {
     idx: q.idx ?? null,
     question_text: q.question_text ?? q.text ?? '',
-    options: ensureArray(q.options).map(String),
-    answer: q.answer != null ? String(q.answer) : null,
+    options: ensureArray(q.options),
+    answer: q.answer != null ? q.answer : null,
     hint: q.hint ?? null,
     explanation: q.explanation ?? null,
     base_text: q.base_text ?? null,
@@ -51,8 +52,8 @@ function normalizeGrammarQuestion(q) {
   return {
     idx: q.idx ?? null,
     question_text: q.question_text ?? q.text ?? '',
-    options: ensureArray(q.options).map(String),
-    answer: q.answer != null ? String(q.answer) : null,
+    options: ensureArray(q.options),
+    answer: q.answer != null ? q.answer : null,
     hint: q.hint ?? null,
     explanation: q.explanation ?? null,
     category: q.category ?? null,
@@ -109,6 +110,7 @@ async function upsertChapterRow(supabase, test_id, ch) {
     duration_seconds: ch.duration_seconds
   };
 
+  // onConflict requires matching unique constraint in DB (we assume you created them)
   const { data, error } = await supabase
     .from('chapters')
     .upsert(chapterRow, { onConflict: ['test_id', 'idx'] })
@@ -127,9 +129,7 @@ function getSupabaseClient() {
     throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY (or NEXT_PUBLIC fallback) env vars');
   }
 
-  return createClient(url, key, {
-    auth: { persistSession: false }
-  });
+  return createClient(url, key, { auth: { persistSession: false } });
 }
 
 export async function POST(request) {
@@ -144,7 +144,6 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Missing chapters in JSON payload' }, { status: 400 });
     }
 
-    // create supabase client at runtime
     let supabase;
     try {
       supabase = getSupabaseClient();
@@ -159,14 +158,21 @@ export async function POST(request) {
 
     const results = { chapters: [], errors: [] };
 
+    // allowed columns per table (match your DB schema)
+    const LISTENING_PIECE_COLS = ['chapter_id', 'idx', 'audio_url', 'transcript'];
+    const LISTENING_QUESTION_COLS = ['listening_piece_id', 'idx', 'question_text', 'options', 'answer', 'hint', 'explanation'];
+    const READING_PIECE_COLS = ['chapter_id', 'idx', 'passage_title', 'passage'];
+    const READING_QUESTION_COLS = ['reading_piece_id', 'idx', 'question_text', 'options', 'answer', 'hint', 'explanation', 'base_text', 'underlined_words', 'underlined_positions'];
+    const GRAMMAR_QUESTION_COLS = ['chapter_id', 'idx', 'question_text', 'options', 'answer', 'hint', 'explanation', 'category', 'base_text', 'underlined_words', 'underlined_positions'];
+
     for (const ch of normalizedChapters) {
       try {
         const chapterId = await upsertChapterRow(supabase, test_id, ch);
 
-        // listening pieces
+        // LISTENING
         if (ch.type === 'listening') {
           for (const p of ch.pieces || []) {
-            const pieceRow = { chapter_id: chapterId, idx: p.idx, audio_url: p.audio_url, transcript: p.transcript };
+            const pieceRow = pick({ chapter_id: chapterId, ...p }, LISTENING_PIECE_COLS);
             const { error: pieceErr } = await supabase.from('listening_pieces').upsert(pieceRow, { onConflict: ['chapter_id', 'idx'] });
             if (pieceErr) throw pieceErr;
 
@@ -181,18 +187,11 @@ export async function POST(request) {
             if (findPieceErr) throw findPieceErr;
             const listening_piece_id = foundPiece?.id;
 
-            const questionRows = (p.listening_questions || []).map(q => ({
-              listening_piece_id,
-              idx: q.idx,
-              question_text: q.question_text,
-              options: q.options,
-              answer: q.answer,
-              hint: q.hint,
-              explanation: q.explanation,
-              base_text: q.base_text,
-              underlined_words: q.underlined_words,
-              underlined_positions: q.underlined_positions
-            }));
+            const questionRows = (p.listening_questions || []).map(q => {
+              // normalize and pick only allowed cols for listening_questions
+              const normalized = normalizeListeningQuestion(q);
+              return pick({ listening_piece_id, ...normalized }, LISTENING_QUESTION_COLS);
+            });
 
             if (questionRows.length) {
               const { error: qErr } = await supabase.from('listening_questions').upsert(questionRows, { onConflict: ['listening_piece_id', 'idx'] });
@@ -201,10 +200,10 @@ export async function POST(request) {
           }
         }
 
-        // reading pieces
+        // READING
         if (ch.type === 'reading') {
           for (const p of ch.pieces || []) {
-            const pieceRow = { chapter_id: chapterId, idx: p.idx, passage_title: p.passage_title, passage: p.passage };
+            const pieceRow = pick({ chapter_id: chapterId, ...p }, READING_PIECE_COLS);
             const { error: pieceErr } = await supabase.from('reading_pieces').upsert(pieceRow, { onConflict: ['chapter_id', 'idx'] });
             if (pieceErr) throw pieceErr;
 
@@ -219,18 +218,10 @@ export async function POST(request) {
             if (findPieceErr) throw findPieceErr;
             const reading_piece_id = foundPiece?.id;
 
-            const questionRows = (p.reading_questions || []).map(q => ({
-              reading_piece_id,
-              idx: q.idx,
-              question_text: q.question_text,
-              options: q.options,
-              answer: q.answer,
-              hint: q.hint,
-              explanation: q.explanation,
-              base_text: q.base_text,
-              underlined_words: q.underlined_words,
-              underlined_positions: q.underlined_positions
-            }));
+            const questionRows = (p.reading_questions || []).map(q => {
+              const normalized = normalizeReadingQuestion(q);
+              return pick({ reading_piece_id, ...normalized }, READING_QUESTION_COLS);
+            });
 
             if (questionRows.length) {
               const { error: qErr } = await supabase.from('reading_questions').upsert(questionRows, { onConflict: ['reading_piece_id', 'idx'] });
@@ -239,21 +230,12 @@ export async function POST(request) {
           }
         }
 
-        // grammar questions
+        // GRAMMAR
         if (ch.type === 'grammar') {
-          const questionRows = (ch.questions || []).map(q => ({
-            chapter_id: chapterId,
-            idx: q.idx,
-            question_text: q.question_text,
-            options: q.options,
-            answer: q.answer,
-            hint: q.hint,
-            explanation: q.explanation,
-            category: q.category,
-            base_text: q.base_text,
-            underlined_words: q.underlined_words,
-            underlined_positions: q.underlined_positions
-          }));
+          const questionRows = (ch.questions || []).map(q => {
+            const normalized = normalizeGrammarQuestion(q);
+            return pick({ chapter_id: chapterId, ...normalized }, GRAMMAR_QUESTION_COLS);
+          });
 
           if (questionRows.length) {
             const { error: gErr } = await supabase.from('grammar_questions').upsert(questionRows, { onConflict: ['chapter_id', 'idx'] });
@@ -269,7 +251,7 @@ export async function POST(request) {
           message: chError?.message ?? String(chError),
           stack: chError?.stack ?? null
         });
-        // continue processing next chapters
+        // continue to next chapter
       }
     }
 
