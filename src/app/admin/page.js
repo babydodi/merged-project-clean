@@ -1,271 +1,325 @@
-// app/api/admin/upload-json/route.js
-import { NextResponse } from "next/server";
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
-import { cookies } from "next/headers";
+'use client';
 
-/*
-  Route محسّن لرفع اختبارات مجمعة أو منفصلة.
-  يدعم:
-   - body.chapters: [ ... ]
-   - body.grammar_chapters, body.reading_chapters, body.listening_chapters
-   - body.chapter (كائن فردي) أو body يمثل فصلًا واحدًا
-  ويفصّل بين reading_pieces و listening_pieces بناءً على وجود audio_url/transcript.
-*/
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
-async function requireAdmin(supabase) {
-  const {
-    data: { user },
-    error: userErr,
-  } = await supabase.auth.getUser();
+export default function AdminTestsPage() {
+  const router = useRouter();
+  const supabase = createClientComponentClient();
 
-  if (userErr || !user) throw new Error("غير مسموح: اليوزر غير مسجل");
+  const [tests, setTests] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const { data, error } = await supabase
-    .from("users")
-    .select("role")
-    .eq("id", user.id)
-    .single();
+  // حقول الرفع
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [grammarFile, setGrammarFile] = useState(null);
+  const [readingFile, setReadingFile] = useState(null);
+  const [listeningFile, setListeningFile] = useState(null);
+  const [fullFile, setFullFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState('');
 
-  if (error) throw new Error("فشل التحقق من صلاحية المستخدم");
-  if (!data || data.role !== "admin") throw new Error("غير مسموح: مطلوب دور admin");
-}
+  useEffect(() => {
+    loadTests();
+  }, []);
 
-const ensureArray = (x) => (Array.isArray(x) ? x : []);
+  const loadTests = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('tests')
+        .select('id, title, description, availability, created_at')
+        .order('created_at', { ascending: false });
 
-// كشف إذا كان الكائن يشبه فصل (chapter)
-const looksLikeChapter = (obj) => {
-  if (!obj || typeof obj !== "object") return false;
-  const keys = Object.keys(obj);
-  return (
-    keys.includes("type") ||
-    keys.includes("questions") ||
-    keys.includes("pieces") ||
-    keys.includes("idx") ||
-    keys.includes("title")
-  );
-};
-
-const normalizeChapter = (ch) => {
-  const chapter = { ...ch };
-  if (!chapter.type) {
-    if (Array.isArray(chapter.questions)) chapter.type = "grammar";
-    else if (Array.isArray(chapter.pieces)) {
-      const firstPiece = Array.isArray(chapter.pieces) ? chapter.pieces[0] : null;
-      if (firstPiece && (firstPiece.audio_url || firstPiece.transcript)) chapter.type = "listening";
-      else chapter.type = "reading";
-    } else chapter.type = "unknown";
-  }
-  chapter.idx = typeof chapter.idx === "number" ? chapter.idx : null;
-  chapter.title = chapter.title || null;
-  chapter.duration_seconds = typeof chapter.duration_seconds === "number" ? chapter.duration_seconds : null;
-  return chapter;
-};
-
-export async function POST(req) {
-  const supabase = createRouteHandlerClient({ cookies });
-
-  try {
-    // تحقق صلاحية admin
-    await requireAdmin(supabase);
-
-    const body = await req.json();
-
-    // عنوان الاختبار مطلوب على مستوى الجذر
-    const { title, description, availability, is_published } = body;
-    if (!title) {
-      return NextResponse.json({ success: false, error: "العنوان (title) مطلوب في جذر الـ JSON" }, { status: 400 });
-    }
-
-    // جمع الفصول من كل المسارات الممكنة
-    let chapters = [];
-
-    // 1) مباشرة body.chapters
-    if (Array.isArray(body.chapters) && body.chapters.length) {
-      chapters = body.chapters;
-    } else {
-      // 2) فصول منفصلة كمصفوفات (grammar_chapters, reading_chapters, listening_chapters)
-      const g = ensureArray(body.grammar_chapters);
-      const r = ensureArray(body.reading_chapters);
-      const l = ensureArray(body.listening_chapters);
-
-      if (g.length || r.length || l.length) {
-        chapters = [...g, ...r, ...l];
-      } else if (body.chapter && typeof body.chapter === "object") {
-        // 3) فصل مفرد تحت المفتاح chapter
-        chapters = [body.chapter];
+      if (error) {
+        console.error('loadTests error', error);
+        setTests([]);
       } else {
-        // 4) ربما body نفسه يمثل فصلًا مفردًا (لو client أرسل فصل بدون envelope)
-        if ((Array.isArray(body.questions) && body.questions.length) || (Array.isArray(body.pieces) && body.pieces.length)) {
-          chapters = [body];
+        setTests(data || []);
+      }
+    } catch (err) {
+      console.error('loadTests exception', err);
+      setTests([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ------------------------------
+  // دوال مساعدة آمنة لتحليل الملفات إلى مصفوفة فصول
+  // ------------------------------
+  const parseFileToChapters = async (file) => {
+    // دائمًا تعيد مصفوفة (حتى لو فشل التحليل) لمنع أخطاء "not iterable"
+    if (!file) return [];
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+
+      // حالة: body.chapters: [ ... ]
+      if (Array.isArray(json.chapters) && json.chapters.length) return json.chapters;
+
+      // حالة: الملف نفسه قد يكون مصفوفة من الفصول
+      if (Array.isArray(json) && json.length) return json;
+
+      // حالة: body.chapter: { ... } -> [ chapter ]
+      if (json.chapter && typeof json.chapter === 'object') return [json.chapter];
+
+      // حالة: الملف نفسه قد يمثل فصل مفرد يحتوي questions أو pieces
+      if (json && typeof json === 'object' && (Array.isArray(json.questions) || Array.isArray(json.pieces))) {
+        return [json];
+      }
+
+      // لا نجد بنية فصل واضحة -> رجّع مصفوفة فارغة
+      return [];
+    } catch (err) {
+      // لا نُرمِ الاستثناء لكي لا يكسر تدفق الرفع؛ نرجع مصفوفة فارغة ونطبع الخطأ
+      console.error('parseFileToChapters error for', file?.name, err);
+      return [];
+    }
+  };
+
+  const safeSpread = (x) => (Array.isArray(x) ? x : []);
+
+  const normalizeChapter = (ch) => {
+    const chapter = { ...ch };
+    if (!chapter.type) {
+      if (Array.isArray(chapter.questions)) chapter.type = 'grammar';
+      else if (Array.isArray(chapter.pieces)) {
+        const firstPiece = Array.isArray(chapter.pieces) ? chapter.pieces[0] : null;
+        if (firstPiece && (firstPiece.audio_url || firstPiece.transcript)) chapter.type = 'listening';
+        else chapter.type = 'reading';
+      } else chapter.type = 'unknown';
+    }
+    chapter.idx = typeof chapter.idx === 'number' ? chapter.idx : null;
+    chapter.title = chapter.title || null;
+    chapter.duration_seconds = typeof chapter.duration_seconds === 'number' ? chapter.duration_seconds : null;
+    return chapter;
+  };
+
+  // ------------------------------
+  // الدالة الرئيسية لرفع الملفات
+  // ------------------------------
+  const handleUpload = async () => {
+    // تحقق مبكر
+    if (!title) {
+      setMessage('❌ العنوان مطلوب');
+      return;
+    }
+    if (!grammarFile && !readingFile && !listeningFile && !fullFile) {
+      setMessage('❌ اختر على الأقل ملف واحد (Grammar / Reading / Listening / Full)');
+      return;
+    }
+
+    setUploading(true);
+    setMessage('');
+
+    try {
+      let chapters = [];
+
+      if (fullFile) {
+        // الملف الكامل يفترض أن يحتوي root.chapters أو فصل واحد
+        const parsed = await parseFileToChapters(fullFile);
+        chapters = parsed;
+      } else {
+        // ملفات منفصلة: أرسلها كلها إلى parse في نفس الوقت
+        const [grammarChapters, readingChapters, listeningChapters] = await Promise.all([
+          parseFileToChapters(grammarFile),
+          parseFileToChapters(readingFile),
+          parseFileToChapters(listeningFile),
+        ]);
+
+        // طباعة تصحيحية لمساعدتك أثناء التطوير
+        console.log('parsed chapters counts:', {
+          g: grammarChapters.length,
+          r: readingChapters.length,
+          l: listeningChapters.length,
+        });
+        console.log('sample parsed contents:', {
+          grammarSample: grammarChapters[0],
+          readingSample: readingChapters[0],
+          listeningSample: listeningChapters[0],
+        });
+
+        chapters = [
+          ...safeSpread(grammarChapters),
+          ...safeSpread(readingChapters),
+          ...safeSpread(listeningChapters),
+        ];
+      }
+
+      // تطبيع الفصول وفحص وجود أسئلة أو pieces
+      const normalized = chapters.map(normalizeChapter);
+      const filtered = normalized.filter((c) => {
+        const hasQuestions = Array.isArray(c.questions) && c.questions.length > 0;
+        const hasPieces = Array.isArray(c.pieces) && c.pieces.length > 0;
+        if (!hasQuestions && !hasPieces) {
+          console.warn('Filtered out chapter (no questions/pieces):', c);
         }
+        return hasQuestions || hasPieces;
+      });
+
+      console.log('final chapters after normalize & filter count:', filtered.length);
+
+      if (!filtered.length) {
+        setMessage('❌ لا توجد فصول/أسئلة صالحة في الملفات المرفوعة');
+        setUploading(false);
+        return;
       }
-    }
 
-    if (!Array.isArray(chapters) || chapters.length === 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "لا توجد فصول (chapters) صالحة في الطلب. أرسل أحد الحقول: chapters (array) أو grammar_chapters/reading_chapters/listening_chapters أو chapter واحد",
-        },
-        { status: 400 }
-      );
-    }
-
-    // تطبيع الفصول
-    const normalized = chapters.map(normalizeChapter);
-
-    // فلترة الفصول الفارغة (لا تحتوي questions أو pieces)
-    const filtered = normalized.filter((c) => {
-      const hasQuestions = Array.isArray(c.questions) && c.questions.length > 0;
-      const hasPieces = Array.isArray(c.pieces) && c.pieces.length > 0;
-      if (!hasQuestions && !hasPieces) {
-        console.warn('Filtered out chapter (no questions/pieces):', c);
-      }
-      return hasQuestions || hasPieces;
-    });
-
-    if (filtered.length === 0) {
-      return NextResponse.json(
-        { success: false, error: "بعد التطبيع لم نجد فصولًا تحتوي على questions أو pieces. تحقق من بنية الفصول." },
-        { status: 400 }
-      );
-    }
-
-    // إدراج الاختبار
-    const { data: testRow, error: testError } = await supabase
-      .from("tests")
-      .insert({
+      // تجهيز الجسم للـ API
+      const body = {
         title,
-        description: description || null,
-        availability: availability || "all",
-        is_published: is_published ?? true,
-      })
-      .select()
-      .single();
+        description,
+        availability: 'all',
+        is_published: true,
+        chapters: filtered,
+      };
 
-    if (testError) throw testError;
-
-    // إدراج الفصول والأسئلة والقطع، مع تفرقة reading vs listening
-    for (const ch of filtered) {
-      const { data: chapterRow, error: chapterError } = await supabase
-        .from("chapters")
-        .insert({
-          test_id: testRow.id,
-          idx: ch.idx,
-          type: ch.type,
-          title: ch.title || null,
-          duration_seconds: ch.duration_seconds || null,
-        })
-        .select()
-        .single();
-
-      if (chapterError) throw chapterError;
-
-      // ===== إدراج الأسئلة العامة (grammar_questions) =====
-      if (Array.isArray(ch.questions) && ch.questions.length) {
-        for (const q of ch.questions) {
-          const payload = {
-            chapter_id: chapterRow.id,
-            idx: typeof q.idx === "number" ? q.idx : null,
-            question_text: q.question_text || q.text || null,
-            options: Array.isArray(q.options) ? q.options : q.options ? [q.options] : [],
-            answer: q.answer != null ? String(q.answer) : null,
-            hint: q.hint || null,
-            explanation: q.explanation || null,
-            category: q.category || null,
-            base_text: q.base_text || null,
-            underlined_words: q.underlined_words || null,
-            underlined_positions: q.underlined_positions || null,
-          };
-
-          const { error: qError } = await supabase.from("grammar_questions").insert(payload);
-          if (qError) throw qError;
-        }
+      // طبع حجم payload لمراقبة المشاكل المحتملة الكبيرة
+      try {
+        const bodyStr = JSON.stringify(body);
+        console.log('payload size (chars):', bodyStr.length);
+      } catch (e) {
+        console.warn('Unable to stringify body for size check', e);
       }
 
-      // ===== إدراج pieces (قراءة أو استماع) =====
-      if (Array.isArray(ch.pieces) && ch.pieces.length) {
-        for (const piece of ch.pieces) {
-          const isListening = !!(piece.audio_url || piece.transcript);
+      // إرسال إلى route
+      const res = await fetch('/api/admin/upload-json', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
 
-          if (isListening) {
-            // listening_pieces
-            const piecePayload = {
-              chapter_id: chapterRow.id,
-              idx: typeof piece.idx === "number" ? piece.idx : null,
-              audio_url: piece.audio_url || null,
-              transcript: piece.transcript || null,
-              passage_title: piece.passage_title || piece.title || null,
-              passage: piece.passage || null,
-            };
+      const data = await res.json();
 
-            const { data: pieceRow, error: pieceError } = await supabase
-              .from("listening_pieces")
-              .insert(piecePayload)
-              .select()
-              .single();
-
-            if (pieceError) throw pieceError;
-
-            if (Array.isArray(piece.questions) && piece.questions.length) {
-              for (const q of piece.questions) {
-                const payload = {
-                  listening_piece_id: pieceRow.id,
-                  idx: typeof q.idx === "number" ? q.idx : null,
-                  question_text: q.question_text || q.text || null,
-                  options: Array.isArray(q.options) ? q.options : q.options ? [q.options] : [],
-                  answer: q.answer != null ? String(q.answer) : null,
-                  hint: q.hint || null,
-                  explanation: q.explanation || null,
-                };
-                const { error: qError } = await supabase.from("listening_questions").insert(payload);
-                if (qError) throw qError;
-              }
-            }
-          } else {
-            // reading_pieces
-            const piecePayload = {
-              chapter_id: chapterRow.id,
-              idx: typeof piece.idx === "number" ? piece.idx : null,
-              passage_title: piece.passage_title || piece.title || null,
-              passage: piece.passage || null,
-            };
-
-            const { data: pieceRow, error: pieceError } = await supabase
-              .from("reading_pieces")
-              .insert(piecePayload)
-              .select()
-              .single();
-
-            if (pieceError) throw pieceError;
-
-            if (Array.isArray(piece.questions) && piece.questions.length) {
-              for (const q of piece.questions) {
-                const payload = {
-                  reading_piece_id: pieceRow.id,
-                  idx: typeof q.idx === "number" ? q.idx : null,
-                  question_text: q.question_text || q.text || null,
-                  options: Array.isArray(q.options) ? q.options : q.options ? [q.options] : [],
-                  answer: q.answer != null ? String(q.answer) : null,
-                  hint: q.hint || null,
-                  explanation: q.explanation || null,
-                  base_text: q.base_text || null,
-                  underlined_words: q.underlined_words || null,
-                  underlined_positions: q.underlined_positions || null,
-                };
-                const { error: qError } = await supabase.from("reading_questions").insert(payload);
-                if (qError) throw qError;
-              }
-            }
-          }
-        }
+      if (data.success) {
+        setMessage(`✅ تم رفع الاختبار بنجاح (ID: ${data.test_id})`);
+        // إعادة تهيئة الحقول
+        setTitle('');
+        setDescription('');
+        setGrammarFile(null);
+        setReadingFile(null);
+        setListeningFile(null);
+        setFullFile(null);
+        // إعادة تحميل الاختبارات
+        loadTests();
+      } else {
+        // عرض رسالة مفصّلة إن وُجدت
+        console.error('upload-json response error', data);
+        setMessage(`❌ خطأ من السيرفر: ${data.error || 'غير معروف'}`);
       }
+    } catch (err) {
+      console.error('handleUpload exception', err);
+      setMessage(`❌ حدث خطأ أثناء رفع الملفات: ${err.message || String(err)}`);
+    } finally {
+      setUploading(false);
     }
+  };
 
-    return NextResponse.json({ success: true, test_id: testRow.id });
-  } catch (err) {
-    console.error("Upload-json route error:", err);
-    return NextResponse.json({ success: false, error: err.message || String(err) }, { status: 500 });
-  }
+  return (
+    <div className="p-8 max-w-6xl mx-auto" dir="rtl">
+      <h1 className="text-3xl font-bold mb-6">📋 لوحة تحكم الاختبارات</h1>
+
+      <div className="bg-white shadow rounded-lg p-6 mb-10">
+        <h2 className="text-xl font-semibold mb-4">📤 رفع اختبار جديد</h2>
+
+        <div className="mb-4">
+          <label className="block mb-1 font-semibold">عنوان الاختبار</label>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full border rounded px-3 py-2"
+            placeholder="مثال: STEP Grammar Test"
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="block mb-1 font-semibold">الوصف</label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className="w-full border rounded px-3 py-2"
+            placeholder="اكتب وصف قصير للاختبار"
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="block mb-1 font-semibold">📘 ملف Grammar</label>
+          <input type="file" accept=".json" onChange={(e) => setGrammarFile(e.target.files[0] ?? null)} />
+        </div>
+
+        <div className="mb-4">
+          <label className="block mb-1 font-semibold">📖 ملف Reading</label>
+          <input type="file" accept=".json" onChange={(e) => setReadingFile(e.target.files[0] ?? null)} />
+        </div>
+
+        <div className="mb-4">
+          <label className="block mb-1 font-semibold">🎧 ملف Listening</label>
+          <input type="file" accept=".json" onChange={(e) => setListeningFile(e.target.files[0] ?? null)} />
+        </div>
+
+        <div className="mb-4">
+          <label className="block mb-1 font-semibold">📂 ملف كامل (يشمل كل الأقسام)</label>
+          <input type="file" accept=".json" onChange={(e) => setFullFile(e.target.files[0] ?? null)} />
+        </div>
+
+        <button
+          onClick={handleUpload}
+          disabled={uploading}
+          className="px-4 py-2 bg-indigo-600 text-white rounded"
+        >
+          {uploading ? '⏳ جاري الرفع...' : 'رفع الاختبار'}
+        </button>
+
+        {message && <p className="mt-4">{message}</p>}
+      </div>
+
+      <div className="bg-white shadow rounded-lg p-6">
+        <h2 className="text-xl font-semibold mb-4">📚 قائمة الاختبارات</h2>
+
+        {loading ? (
+          <p>⏳ جاري التحميل...</p>
+        ) : tests.length === 0 ? (
+          <p>❌ لا توجد اختبارات حالياً</p>
+        ) : (
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-gray-100 text-right">
+                <th className="p-2 border">#</th>
+                <th className="p-2 border">العنوان</th>
+                <th className="p-2 border">الوصف</th>
+                <th className="p-2 border">الحالة</th>
+                <th className="p-2 border">تاريخ الإنشاء</th>
+                <th className="p-2 border">إجراءات</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tests.map((test, idx) => (
+                <tr key={test.id} className="hover:bg-gray-50">
+                  <td className="p-2 border">{idx + 1}</td>
+                  <td className="p-2 border">{test.title}</td>
+                  <td className="p-2 border">{test.description}</td>
+                  <td className="p-2 border">{test.availability}</td>
+                  <td className="p-2 border">
+                    {new Date(test.created_at).toLocaleDateString('ar-SA')}
+                  </td>
+                  <td className="p-2 border">
+                    <button
+                      onClick={() => router.push(`/admin/tests/${test.id}`)}
+                      className="px-3 py-1 bg-blue-600 text-white rounded mr-2"
+                    >
+                      ✏️ تعديل
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
 }
