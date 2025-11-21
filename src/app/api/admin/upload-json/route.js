@@ -4,11 +4,12 @@ import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 
 /*
-  Route محسّن لاستقبال:
-  - body.chapters: [ ... ]  (الأمثل)
-  - أو body.grammar_chapters, body.reading_chapters, body.listening_chapters (منفصل)
-  - أو body.chapter (كائن واحد) أو body (كائن فصل وحيد)
-  يقوم بتطبيع المدخلات إلى مصفوفة chapters ثم يدخلها في DB.
+  Route محسّن لرفع اختبارات مجمعة أو منفصلة.
+  يدعم:
+   - body.chapters: [ ... ]
+   - body.grammar_chapters, body.reading_chapters, body.listening_chapters
+   - body.chapter (كائن فردي) أو body يمثل فصلًا واحدًا
+  ويفصّل بين reading_pieces و listening_pieces بناءً على وجود audio_url/transcript.
 */
 
 async function requireAdmin(supabase) {
@@ -31,11 +32,10 @@ async function requireAdmin(supabase) {
 
 const ensureArray = (x) => (Array.isArray(x) ? x : []);
 
-// محاولة كشف ما إذا كان كائن يمثل فصل (chapter)
+// كشف إذا كان الكائن يشبه فصل (chapter)
 const looksLikeChapter = (obj) => {
   if (!obj || typeof obj !== "object") return false;
   const keys = Object.keys(obj);
-  // فصل عادة يحتوي على نوع أو أسئلة أو pieces أو idx أو title
   return (
     keys.includes("type") ||
     keys.includes("questions") ||
@@ -45,20 +45,15 @@ const looksLikeChapter = (obj) => {
   );
 };
 
-// تطبيع فصل: ضمان وجود type و idx وأشياء افتراضية بسيطة
 const normalizeChapter = (ch) => {
   const chapter = { ...ch };
   if (!chapter.type) {
     if (Array.isArray(chapter.questions)) chapter.type = "grammar";
     else if (Array.isArray(chapter.pieces)) {
-      // إذا يحتوي على pieces قد يكون reading أو listening
-      // نحاول تخمين بحسب وجود audio_url أو passage داخل pieces[0]
       const firstPiece = Array.isArray(chapter.pieces) ? chapter.pieces[0] : null;
       if (firstPiece && (firstPiece.audio_url || firstPiece.transcript)) chapter.type = "listening";
       else chapter.type = "reading";
-    } else {
-      chapter.type = "unknown";
-    }
+    } else chapter.type = "unknown";
   }
   chapter.idx = typeof chapter.idx === "number" ? chapter.idx : null;
   chapter.title = chapter.title || null;
@@ -75,25 +70,20 @@ export async function POST(req) {
 
     const body = await req.json();
 
-    // التحقق السطحي للحقل العنوان لضمان أننا نتعامل مع طلب صحيح
+    // عنوان الاختبار مطلوب على مستوى الجذر
     const { title, description, availability, is_published } = body;
     if (!title) {
       return NextResponse.json({ success: false, error: "العنوان (title) مطلوب في جذر الـ JSON" }, { status: 400 });
     }
 
-    // نقاط احتمال استقبال الفصول:
-    // 1) body.chapters (مصطفى) - الأفضل
-    // 2) body.grammar_chapters / reading_chapters / listening_chapters (منفصل)
-    // 3) body.chapter (كائن مفرد)
-    // 4) body نفسه قد يكون فصل مفرد (لو العميل أرسل فصل بدون مفتاح)
-
+    // جمع الفصول من كل المسارات الممكنة
     let chapters = [];
 
-    // 1) chapters مباشرة
+    // 1) مباشرة body.chapters
     if (Array.isArray(body.chapters) && body.chapters.length) {
       chapters = body.chapters;
     } else {
-      // 2) الفصول المنفصلة الثلاث (قد تكون غير موجودة)
+      // 2) فصول منفصلة كمصفوفات (grammar_chapters, reading_chapters, listening_chapters)
       const g = ensureArray(body.grammar_chapters);
       const r = ensureArray(body.reading_chapters);
       const l = ensureArray(body.listening_chapters);
@@ -101,51 +91,48 @@ export async function POST(req) {
       if (g.length || r.length || l.length) {
         chapters = [...g, ...r, ...l];
       } else if (body.chapter && typeof body.chapter === "object") {
-        // 3) chapter مفرد
+        // 3) فصل مفرد تحت المفتاح chapter
         chapters = [body.chapter];
       } else {
-        // 4) ربما body نفسه هو فصل واحد (لو تم إرسال فصل بدون envelope)
-        if (looksLikeChapter(body)) {
-          // ولكن تأكد أننا لا نخلط مع الحقول العامة مثل title/description
-          // إذا body يحتوي حقول فصل ويتم إرسال مع title الأعلى فذلك غير متوقع، نسمح به فقط إن كان شكل body فصل فقط (بلا title في root)
-          // هنا نأخذ قرار مرن: إذا body يحتوي على questions أو pieces نعتبره فصلًا
-          if (Array.isArray(body.questions) || Array.isArray(body.pieces)) {
-            chapters = [body];
-          }
+        // 4) ربما body نفسه يمثل فصلًا مفردًا (لو client أرسل فصل بدون envelope)
+        if ((Array.isArray(body.questions) && body.questions.length) || (Array.isArray(body.pieces) && body.pieces.length)) {
+          chapters = [body];
         }
       }
     }
 
-    // إن لم نجد أي chapters، نرجع خطأ واضح
     if (!Array.isArray(chapters) || chapters.length === 0) {
       return NextResponse.json(
         {
           success: false,
           error:
-            "لا توجد فصول (chapters) صالحة في الطلب. تأكد من إرسال أحد الحقول: chapters (array) أو grammar_chapters/reading_chapters/listening_chapters أو chapter واحد",
+            "لا توجد فصول (chapters) صالحة في الطلب. أرسل أحد الحقول: chapters (array) أو grammar_chapters/reading_chapters/listening_chapters أو chapter واحد",
         },
         { status: 400 }
       );
     }
 
-    // تطبيع: كل فصل يجب أن يصبح كائن مناسب، ونتأكد من وجود questions أو pieces في النهاية
+    // تطبيع الفصول
     const normalized = chapters.map(normalizeChapter);
 
     // فلترة الفصول الفارغة (لا تحتوي questions أو pieces)
     const filtered = normalized.filter((c) => {
       const hasQuestions = Array.isArray(c.questions) && c.questions.length > 0;
       const hasPieces = Array.isArray(c.pieces) && c.pieces.length > 0;
+      if (!hasQuestions && !hasPieces) {
+        console.warn('Filtered out chapter (no questions/pieces):', c);
+      }
       return hasQuestions || hasPieces;
     });
 
     if (filtered.length === 0) {
       return NextResponse.json(
-        { success: false, error: "بعد التطبيع لم نجد فصولاً تحتوي على questions أو pieces. تحقق من بنية الفصول." },
+        { success: false, error: "بعد التطبيع لم نجد فصولًا تحتوي على questions أو pieces. تحقق من بنية الفصول." },
         { status: 400 }
       );
     }
 
-    // إدراج الاختبار (tests table)
+    // إدراج الاختبار
     const { data: testRow, error: testError } = await supabase
       .from("tests")
       .insert({
@@ -159,7 +146,7 @@ export async function POST(req) {
 
     if (testError) throw testError;
 
-    // إدراج الفصول والأسئلة
+    // إدراج الفصول والأسئلة والقطع، مع تفرقة reading vs listening
     for (const ch of filtered) {
       const { data: chapterRow, error: chapterError } = await supabase
         .from("chapters")
@@ -175,7 +162,7 @@ export async function POST(req) {
 
       if (chapterError) throw chapterError;
 
-      // إذا الفصل يحتوي على questions (grammar / some reading questions)
+      // ===== إدراج الأسئلة العامة (grammar_questions) =====
       if (Array.isArray(ch.questions) && ch.questions.length) {
         for (const q of ch.questions) {
           const payload = {
@@ -197,51 +184,83 @@ export async function POST(req) {
         }
       }
 
-      // إذا الفصل يحتوي على pieces (reading/listening)
+      // ===== إدراج pieces (قراءة أو استماع) =====
       if (Array.isArray(ch.pieces) && ch.pieces.length) {
         for (const piece of ch.pieces) {
-          // إدراج القطعة أولاً
-          const piecePayload = {
-            chapter_id: chapterRow.id,
-            idx: typeof piece.idx === "number" ? piece.idx : null,
-            passage_title: piece.passage_title || piece.title || null,
-            passage: piece.passage || null,
-            audio_url: piece.audio_url || null,
-            transcript: piece.transcript || null,
-          };
+          const isListening = !!(piece.audio_url || piece.transcript);
 
-          const { data: pieceRow, error: pieceError } = await supabase
-            .from("reading_pieces")
-            .insert(piecePayload)
-            .select()
-            .single();
+          if (isListening) {
+            // listening_pieces
+            const piecePayload = {
+              chapter_id: chapterRow.id,
+              idx: typeof piece.idx === "number" ? piece.idx : null,
+              audio_url: piece.audio_url || null,
+              transcript: piece.transcript || null,
+              passage_title: piece.passage_title || piece.title || null,
+              passage: piece.passage || null,
+            };
 
-          if (pieceError) throw pieceError;
+            const { data: pieceRow, error: pieceError } = await supabase
+              .from("listening_pieces")
+              .insert(piecePayload)
+              .select()
+              .single();
 
-          // ثم إدراج أسئلة القطعة إن وُجدت
-          if (Array.isArray(piece.questions) && piece.questions.length) {
-            for (const q of piece.questions) {
-              const payload = {
-                reading_piece_id: pieceRow.id,
-                idx: typeof q.idx === "number" ? q.idx : null,
-                question_text: q.question_text || q.text || null,
-                options: Array.isArray(q.options) ? q.options : q.options ? [q.options] : [],
-                answer: q.answer != null ? String(q.answer) : null,
-                hint: q.hint || null,
-                explanation: q.explanation || null,
-                base_text: q.base_text || null,
-                underlined_words: q.underlined_words || null,
-                underlined_positions: q.underlined_positions || null,
-              };
-              const { error: qError } = await supabase.from("reading_questions").insert(payload);
-              if (qError) throw qError;
+            if (pieceError) throw pieceError;
+
+            if (Array.isArray(piece.questions) && piece.questions.length) {
+              for (const q of piece.questions) {
+                const payload = {
+                  listening_piece_id: pieceRow.id,
+                  idx: typeof q.idx === "number" ? q.idx : null,
+                  question_text: q.question_text || q.text || null,
+                  options: Array.isArray(q.options) ? q.options : q.options ? [q.options] : [],
+                  answer: q.answer != null ? String(q.answer) : null,
+                  hint: q.hint || null,
+                  explanation: q.explanation || null,
+                };
+                const { error: qError } = await supabase.from("listening_questions").insert(payload);
+                if (qError) throw qError;
+              }
+            }
+          } else {
+            // reading_pieces
+            const piecePayload = {
+              chapter_id: chapterRow.id,
+              idx: typeof piece.idx === "number" ? piece.idx : null,
+              passage_title: piece.passage_title || piece.title || null,
+              passage: piece.passage || null,
+            };
+
+            const { data: pieceRow, error: pieceError } = await supabase
+              .from("reading_pieces")
+              .insert(piecePayload)
+              .select()
+              .single();
+
+            if (pieceError) throw pieceError;
+
+            if (Array.isArray(piece.questions) && piece.questions.length) {
+              for (const q of piece.questions) {
+                const payload = {
+                  reading_piece_id: pieceRow.id,
+                  idx: typeof q.idx === "number" ? q.idx : null,
+                  question_text: q.question_text || q.text || null,
+                  options: Array.isArray(q.options) ? q.options : q.options ? [q.options] : [],
+                  answer: q.answer != null ? String(q.answer) : null,
+                  hint: q.hint || null,
+                  explanation: q.explanation || null,
+                  base_text: q.base_text || null,
+                  underlined_words: q.underlined_words || null,
+                  underlined_positions: q.underlined_positions || null,
+                };
+                const { error: qError } = await supabase.from("reading_questions").insert(payload);
+                if (qError) throw qError;
+              }
             }
           }
         }
       }
-
-      // إذا فصل استماع (listening) وكنت تُدخِله في جدول listening_pieces بدلاً من reading_pieces
-      // هنا نُعيد استخدام reading_pieces لسهولة؛ إن أردت فصلًا واضحًا يمكنك تعديل لإنشاء listening_pieces.
     }
 
     return NextResponse.json({ success: true, test_id: testRow.id });
