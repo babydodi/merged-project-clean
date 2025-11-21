@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { Volume2, ChevronRight, Lightbulb, ArrowLeft, Tag } from 'lucide-react';
@@ -8,123 +8,110 @@ import { Button } from '../../../components/ui/button';
 import HintModal from '../../../components/HintModal';
 
 export default function TestPage() {
-  const params = useParams();
+  const { testId: id } = useParams();
   const router = useRouter();
   const supabase = createClientComponentClient();
 
-  const idParam = params?.testId ?? params?.id ?? params?.test_id ?? null;
-
+  // state
   const [test, setTest] = useState(null);
   const [chapters, setChapters] = useState([]);
   const [attemptId, setAttemptId] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // navigation
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
   const [currentPieceIndex, setCurrentPieceIndex] = useState(0);
-  const [phase, setPhase] = useState('intro');
+  const [phase, setPhase] = useState('intro'); // for listening
   const [showResult, setShowResult] = useState(false);
 
-  const [answers, setAnswers] = useState({});
-  const [answeredMap, setAnsweredMap] = useState({});
-  const [markedMap, setMarkedMap] = useState({});
+  // answers & tracking
+  const [answers, setAnswers] = useState({}); // { questionId: selectedValue }
+  const [answeredMap, setAnsweredMap] = useState({}); // qid -> true
+  const [markedMap, setMarkedMap] = useState({}); // qid -> true (marked for review)
   const [validationError, setValidationError] = useState('');
   const [activeHintQuestion, setActiveHintQuestion] = useState(null);
 
+  // results
   const [scores, setScores] = useState({ listening: 0, reading: 0, grammar: 0, total: 0, percentage: 0 });
   const [wrongAnswers, setWrongAnswers] = useState([]);
 
   const questionRefs = useRef({});
-  const [showMarkedPanel, setShowMarkedPanel] = useState(false);
-  const markedList = useMemo(() => Object.keys(markedMap), [markedMap]);
 
   useEffect(() => {
     initTest();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idParam]);
+  }, [id]);
 
   async function initTest() {
     try {
-      setLoading(true);
-      if (!idParam) {
+      if (!id) {
         setLoading(false);
         return;
       }
+      setLoading(true);
 
+      // create attempt (if user logged in, include user_id)
       const { data: userData } = await supabase.auth.getUser();
       const currentUser = userData?.user || null;
-      const payload = currentUser ? { test_id: idParam, user_id: currentUser.id } : { test_id: idParam };
+      const payload = currentUser ? { test_id: id, user_id: currentUser.id } : { test_id: id };
 
-      const { data: attempt, error: attemptErr } = await supabase.from('test_attempts').insert(payload).select().single();
+      const { data: attempt, error: attemptErr } = await supabase
+        .from('test_attempts')
+        .insert(payload)
+        .select()
+        .single();
+
       if (attemptErr) throw attemptErr;
       setAttemptId(attempt.id);
 
-      // fetch test (id or slug fallback)
-      let testData = null;
-      const { data: t1, error: e1 } = await supabase.from('tests').select('*').eq('id', idParam).single();
-      if (!e1 && t1) testData = t1;
-      else {
-        const { data: t2, error: e2 } = await supabase.from('tests').select('*').eq('slug', idParam).single();
-        if (!e2 && t2) testData = t2;
-        else if (e1) throw e1;
-        else if (e2) throw e2;
-      }
+      const { data: testData, error: testErr } = await supabase
+        .from('tests')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (testErr) throw testErr;
       setTest(testData);
 
+      // fetch chapters and their nested pieces/questions including extra fields
       const { data: chaptersData, error: chErr } = await supabase
         .from('chapters')
-        .select('id, type, title, idx, duration_seconds, test_id')
-        .eq('test_id', testData.id)
+        .select('id, type, title, idx, duration_seconds')
+        .eq('test_id', id)
         .order('idx', { ascending: true });
 
       if (chErr) throw chErr;
-      if (!chaptersData || chaptersData.length === 0) {
-        setChapters([]);
-        setLoading(false);
-        return;
-      }
 
       const assembled = [];
-      for (const ch of chaptersData) {
+
+      for (const ch of chaptersData || []) {
         if (ch.type === 'listening') {
           const { data: pieces, error: lpErr } = await supabase
             .from('listening_pieces')
-            .select('id, audio_url, transcript, idx')
+            .select(
+              `id, audio_url, transcript, idx,
+              listening_questions (
+                id, question_text, options, answer, hint, explanation, idx
+              )`
+            )
             .eq('chapter_id', ch.id)
             .order('idx', { ascending: true });
 
           if (lpErr) throw lpErr;
-
-          // fetch questions per piece in parallel
-          for (const p of pieces || []) {
-            const { data: q, error: qErr } = await supabase
-              .from('listening_questions')
-              .select('id, question_text, options, answer, hint, explanation, idx, base_text, underlined_words, underlined_positions')
-              .eq('listening_piece_id', p.id)
-              .order('idx', { ascending: true });
-
-            if (qErr) throw qErr;
-            p.listening_questions = q || [];
-          }
           assembled.push({ ...ch, pieces: pieces || [] });
         } else if (ch.type === 'reading') {
           const { data: pieces, error: rpErr } = await supabase
             .from('reading_pieces')
-            .select('id, passage_title, passage, idx')
+            .select(
+              `id, passage_title, passage, idx,
+              reading_questions (
+                id, question_text, options, answer, hint, explanation, idx, base_text, underlined_words, underlined_positions
+              )`
+            )
             .eq('chapter_id', ch.id)
             .order('idx', { ascending: true });
 
           if (rpErr) throw rpErr;
-
-          for (const p of pieces || []) {
-            const { data: q, error: qErr } = await supabase
-              .from('reading_questions')
-              .select('id, question_text, options, answer, hint, explanation, idx, base_text, underlined_words, underlined_positions')
-              .eq('reading_piece_id', p.id)
-              .order('idx', { ascending: true });
-
-            if (qErr) throw qErr;
-            p.reading_questions = q || [];
-          }
           assembled.push({ ...ch, pieces: pieces || [] });
         } else if (ch.type === 'grammar') {
           const { data: questions, error: gErr } = await supabase
@@ -135,11 +122,10 @@ export default function TestPage() {
 
           if (gErr) throw gErr;
           assembled.push({ ...ch, questions: questions || [] });
-        } else {
-          assembled.push({ ...ch });
         }
       }
 
+      // optional order to show sections in specific sequence
       const order = { listening: 0, reading: 1, grammar: 2 };
       assembled.sort((a, b) => {
         const t = (order[a.type] ?? 99) - (order[b.type] ?? 99);
@@ -172,69 +158,7 @@ export default function TestPage() {
     return currentChapter.pieces?.[currentPieceIndex] || null;
   }, [currentChapter, currentPieceIndex]);
 
-  function ensureArray(x) {
-    return Array.isArray(x) ? x : [];
-  }
-
-  function escapeRegExp(string) {
-    return String(string).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
-
-  function renderUnderlined(baseText, underlinedWords = null, underlinedPositions = null) {
-    if (!baseText) return <span />;
-    try {
-      if (Array.isArray(underlinedPositions) && underlinedPositions.length > 0) {
-        const nodes = [];
-        let lastIndex = 0;
-        const positions = [...underlinedPositions].sort((a, b) => a.start - b.start);
-        for (let i = 0; i < positions.length; i++) {
-          const pos = positions[i];
-          const start = Math.max(0, pos.start);
-          const end = Math.min(baseText.length, pos.end);
-          if (start > lastIndex) nodes.push(<span key={`t-${i}`}>{baseText.slice(lastIndex, start)}</span>);
-          nodes.push(<u key={`u-${i}`}>{baseText.slice(start, end)}</u>);
-          lastIndex = end;
-        }
-        if (lastIndex < baseText.length) nodes.push(<span key="tail">{baseText.slice(lastIndex)}</span>);
-        return <span>{nodes}</span>;
-      }
-
-      if (Array.isArray(underlinedWords) && underlinedWords.length > 0) {
-        let remaining = baseText;
-        const nodes = [];
-        let keyIndex = 0;
-
-        while (remaining.length) {
-          let foundIndex = -1;
-          let foundWord = null;
-          for (const w of underlinedWords) {
-            const regex = new RegExp(`\\b${escapeRegExp(w)}\\b`, 'i');
-            const m = regex.exec(remaining);
-            if (m && (foundIndex === -1 || m.index < foundIndex)) {
-              foundIndex = m.index;
-              foundWord = m[0];
-            }
-          }
-
-          if (foundIndex === -1) {
-            nodes.push(<span key={keyIndex++}>{remaining}</span>);
-            break;
-          }
-
-          if (foundIndex > 0) nodes.push(<span key={keyIndex++}>{remaining.slice(0, foundIndex)}</span>);
-          nodes.push(<u key={keyIndex++} data-uline={foundWord}>{remaining.substr(foundIndex, foundWord.length)}</u>);
-          remaining = remaining.slice(foundIndex + foundWord.length);
-        }
-
-        return <span>{nodes}</span>;
-      }
-
-      return <span>{baseText}</span>;
-    } catch (e) {
-      return <span>{baseText}</span>;
-    }
-  }
-
+  // save answers of current piece/chapter into question_attempts
   const savePieceAnswers = async (chapterType) => {
     if (!attemptId || !currentChapter) return [];
     let qList = [];
@@ -247,49 +171,45 @@ export default function TestPage() {
     }
 
     const rows = [];
+
     for (const q of qList) {
       if (answers[q.id] !== undefined) {
-        let selectedChoice = answers[q.id];
+        const selected = answers[q.id];
 
-        if (Array.isArray(q.options) && typeof selectedChoice === 'number') {
-          selectedChoice = q.options[selectedChoice];
+        // normalize: if options are array and selected is index number, convert to option string if needed
+        let selectedChoice = selected;
+        if (Array.isArray(q.options) && typeof selected === 'number') {
+          selectedChoice = q.options[selected];
         }
-
-        // normalize object options if necessary
-        if (Array.isArray(q.options) && q.options.length && typeof q.options[0] === 'object') {
-          const normalizeOpt = (opt) => (opt && (opt.value ?? opt.label ?? String(opt)));
-          if (typeof selectedChoice === 'number') selectedChoice = normalizeOpt(q.options[selectedChoice]);
-          else selectedChoice = normalizeOpt(selectedChoice);
-        }
-
-        const normalizedAnswer = q.answer != null ? String(q.answer).trim() : null;
-        const normalizedSelected = selectedChoice != null ? String(selectedChoice).trim() : null;
 
         rows.push({
           attempt_id: attemptId,
           question_id: q.id,
           question_type: chapterType,
-          selected_choice: normalizedSelected,
-          is_correct: normalizedSelected != null ? normalizedSelected === normalizedAnswer : false,
-          answered_at: new Date().toISOString()
+          selected_choice: selectedChoice != null ? String(selectedChoice) : null,
+          is_correct: selectedChoice != null ? String(selectedChoice).trim() === String(q.answer).trim() : false,
+          answered_at: new Date().toISOString(),
         });
       }
     }
 
     if (rows.length === 0) return [];
 
-    const { data, error } = await supabase.from('question_attempts').upsert(rows, { onConflict: ['attempt_id', 'question_id'] });
+    const { data, error } = await supabase
+      .from('question_attempts')
+      .upsert(rows, { onConflict: ['attempt_id', 'question_id'] });
+
     if (error) console.error('savePieceAnswers upsert error', error);
     return data || [];
   };
 
   const handleSelect = (questionId, value) => {
-    setAnswers((prev) => ({ ...prev, [questionId]: value }));
-    setAnsweredMap((prev) => ({ ...prev, [questionId]: true }));
+    setAnswers(prev => ({ ...prev, [questionId]: value }));
+    setAnsweredMap(prev => ({ ...prev, [questionId]: true }));
   };
 
   const toggleMark = (questionId) => {
-    setMarkedMap((prev) => {
+    setMarkedMap(prev => {
       const next = { ...prev };
       if (next[questionId]) delete next[questionId];
       else next[questionId] = true;
@@ -297,29 +217,30 @@ export default function TestPage() {
     });
   };
 
-  const goToQuestionInCurrent = (questionId) => {
-    const el = document.getElementById(`q-${questionId}`);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  };
-
   const getUnansweredInCurrent = () => {
     const qIds = [];
     if (!currentChapter) return qIds;
     if (currentChapter.type === 'listening') {
-      const qs = currentChapter.pieces?.[currentPieceIndex]?.listening_questions || [];
-      qs.forEach((q) => { if (!answeredMap[q.id]) qIds.push(q.id); });
+      const qs = currentChapter.pieces[currentPieceIndex]?.listening_questions || [];
+      qs.forEach(q => {
+        if (!answeredMap[q.id]) qIds.push(q.id);
+      });
     } else if (currentChapter.type === 'reading') {
-      const qs = currentChapter.pieces?.[currentPieceIndex]?.reading_questions || [];
-      qs.forEach((q) => { if (!answeredMap[q.id]) qIds.push(q.id); });
+      const qs = currentChapter.pieces[currentPieceIndex]?.reading_questions || [];
+      qs.forEach(q => {
+        if (!answeredMap[q.id]) qIds.push(q.id);
+      });
     } else if (currentChapter.type === 'grammar') {
-      const q = currentChapter.questions?.[currentPieceIndex];
+      const q = currentChapter.questions[currentPieceIndex];
       if (q && !answeredMap[q.id]) qIds.push(q.id);
     }
     return qIds;
   };
 
+  // New/updated scoring logic (keeps your weights and category handling)
   const finalizeScoresAndWrongs = async () => {
     if (!attemptId) return;
+
     const { data: attemptsRows = [], error: attemptsErr } = await supabase
       .from('question_attempts')
       .select('question_id, question_type, selected_choice, is_correct')
@@ -339,11 +260,16 @@ export default function TestPage() {
     const grammarQuestionIds = attemptsRows.filter(r => r.question_type === 'grammar').map(r => r.question_id);
     let grammarMeta = {};
     if (grammarQuestionIds.length) {
-      const { data: gQs = [], error: gErr } = await supabase.from('grammar_questions').select('id, category, answer').in('id', grammarQuestionIds);
+      const { data: gQs = [], error: gErr } = await supabase
+        .from('grammar_questions')
+        .select('id, category, answer')
+        .in('id', grammarQuestionIds);
+
       if (gErr) console.error('fetch grammar metadata error', gErr);
       (gQs || []).forEach(q => { grammarMeta[q.id] = q; });
     }
 
+    // Count totals & corrects
     for (const r of attemptsRows) {
       if (r.question_type === 'listening') {
         stats.listening.total += 1;
@@ -371,6 +297,7 @@ export default function TestPage() {
     const listeningScore = Math.round(pct(stats.listening.correct, stats.listening.total) * weights.listening);
     const readingScore = Math.round(pct(stats.reading.correct, stats.reading.total) * weights.reading);
 
+    // grammar split into vocab and non-vocab
     const vocabScore = Math.round(pct(stats.grammar.vocab_correct, stats.grammar.vocab_total) * grammarVocabWeight);
     const nonVocabTotal = stats.grammar.total - stats.grammar.vocab_total;
     const nonVocabCorrect = stats.grammar.correct - stats.grammar.vocab_correct;
@@ -383,26 +310,46 @@ export default function TestPage() {
     const percentage = totalQuestions ? Math.round((totalCorrect / totalQuestions) * 100 * 100) / 100 : 0;
 
     setScores({ listening: listeningScore, reading: readingScore, grammar: grammarScore, total: totalScore, percentage });
-    const wrongRows = attemptsRows.filter(r => !r.is_correct);
-    setWrongAnswers(wrongRows.map(r => r.question_id));
 
-    const { data: existing = [], error: exErr } = await supabase.from('user_results').select('id').eq('attempt_id', attemptId).limit(1);
+    const wrongRows = attemptsRows.filter(r => !r.is_correct);
+    const wrongQuestionIds = wrongRows.map(r => r.question_id);
+    setWrongAnswers(wrongQuestionIds);
+
+    // save user_results once
+    const { data: existing = [], error: exErr } = await supabase
+      .from('user_results')
+      .select('id')
+      .eq('attempt_id', attemptId)
+      .limit(1);
+
     if (exErr) console.error('check existing user_results', exErr);
 
     if (!existing || existing.length === 0) {
-      const { error: resultErr } = await supabase.from('user_results').insert({
-        attempt_id: attemptId,
-        score: totalScore,
-        total_questions: totalQuestions,
-        percentage
-      });
+      const { error: resultErr } = await supabase
+        .from('user_results')
+        .insert({
+          attempt_id: attemptId,
+          score: totalScore,
+          total_questions: totalQuestions,
+          percentage
+        });
       if (resultErr) console.error('Error saving user result:', resultErr);
     }
 
-    const { error: completeErr } = await supabase.from('test_attempts').update({ completed_at: new Date().toISOString() }).eq('id', attemptId);
+    const { error: completeErr } = await supabase
+      .from('test_attempts')
+      .update({ completed_at: new Date().toISOString() })
+      .eq('id', attemptId);
+
     if (completeErr) console.error('Error updating attempt completion time:', completeErr);
   };
 
+  const goToQuestionInCurrent = (questionId) => {
+    const el = document.getElementById(`q-${questionId}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  // navigation: next/prev (uses savePieceAnswers and finalize when end)
   const handleNext = async () => {
     if (!currentChapter) return;
 
@@ -417,17 +364,21 @@ export default function TestPage() {
 
     setValidationError('');
 
+    // navigate within chapter or to next chapter
     if (currentChapter.type === 'listening') {
-      const last = (currentChapter.pieces || []).length - 1;
+      const last = currentChapter.pieces.length - 1;
       if (currentPieceIndex < last) {
         setCurrentPieceIndex(i => i + 1);
         setPhase('intro');
         return;
       } else {
-        const unansweredInChapter = getUnansweredInCurrent();
+        const unansweredInChapter = getUnansweredInChapter(currentChapter);
         if (unansweredInChapter.length > 0) {
           const ok = window.confirm(`فيه ${unansweredInChapter.length} سؤال ما جاوبت عليهم في هذا الفصل. تبي تتابع وتروح للفصل التالي؟`);
-          if (!ok) { goToQuestionInCurrent(unansweredInChapter[0]); return; }
+          if (!ok) {
+            goToQuestionInCurrent(unansweredInChapter[0]);
+            return;
+          }
         }
         setCurrentChapterIndex(ci => ci + 1);
         setCurrentPieceIndex(0);
@@ -437,12 +388,12 @@ export default function TestPage() {
     }
 
     if (currentChapter.type === 'reading') {
-      const last = (currentChapter.pieces || []).length - 1;
+      const last = currentChapter.pieces.length - 1;
       if (currentPieceIndex < last) {
         setCurrentPieceIndex(i => i + 1);
         return;
       } else {
-        const unansweredInChapter = getUnansweredInCurrent();
+        const unansweredInChapter = getUnansweredInChapter(currentChapter);
         if (unansweredInChapter.length > 0) {
           const ok = window.confirm(`فيه ${unansweredInChapter.length} سؤال ما جاوبت عليهم في هذا الفصل. تبي تتابع وتروح للفصل التالي؟`);
           if (!ok) { goToQuestionInCurrent(unansweredInChapter[0]); return; }
@@ -455,21 +406,46 @@ export default function TestPage() {
     }
 
     if (currentChapter.type === 'grammar') {
-      const last = (currentChapter.questions || []).length - 1;
+      const last = currentChapter.questions.length - 1;
       if (currentPieceIndex < last) {
         setCurrentPieceIndex(i => i + 1);
         return;
       } else {
-        const unansweredInChapter = getUnansweredInCurrent();
+        const unansweredInChapter = getUnansweredInChapter(currentChapter);
         if (unansweredInChapter.length > 0) {
-          const ok = window.confirm(`فيه ${unansweredInChapter.length} سؤال ما جاوبت عليهم في هذا الفصل. تبي تتابع وتنهي الاختبار؟`);
+          const ok = window.confirm(`فيه ${unansweredInChapter.length} سؤال ما جاوبت عليهم في هذا الفصل. تبي تتابع وتنهي الانتقال؟`);
           if (!ok) { goToQuestionInCurrent(unansweredInChapter[0]); return; }
         }
+        // finish exam
         await finalizeScoresAndWrongs();
         setShowResult(true);
         return;
       }
     }
+  };
+
+  // helper: collect unanswered qids across the entire chapter (all pieces/questions)
+  const getUnansweredInChapter = (chapter) => {
+    const qIds = [];
+    if (!chapter) return qIds;
+    if (chapter.type === 'listening') {
+      for (const p of (chapter.pieces || [])) {
+        for (const q of (p.listening_questions || [])) {
+          if (!answeredMap[q.id]) qIds.push(q.id);
+        }
+      }
+    } else if (chapter.type === 'reading') {
+      for (const p of (chapter.pieces || [])) {
+        for (const q of (p.reading_questions || [])) {
+          if (!answeredMap[q.id]) qIds.push(q.id);
+        }
+      }
+    } else if (chapter.type === 'grammar') {
+      for (const q of (chapter.questions || [])) {
+        if (!answeredMap[q.id]) qIds.push(q.id);
+      }
+    }
+    return qIds;
   };
 
   const handlePrev = async () => {
@@ -488,7 +464,70 @@ export default function TestPage() {
     setValidationError('');
   };
 
-  const goToReview = () => { if (!attemptId) return; router.push(`/attempts/${attemptId}/review`); };
+  const goToReview = () => {
+    if (!attemptId) return;
+    router.push(`/attempts/${attemptId}/review`);
+  };
+
+  const [showMarkedPanel, setShowMarkedPanel] = useState(false);
+  const markedList = useMemo(() => Object.keys(markedMap), [markedMap]);
+
+  // utility: render underlined words using underlined_words or underlined_positions
+  function renderUnderlined(baseText, underlinedWords = null, underlinedPositions = null) {
+    if (!baseText) return <span />;
+    try {
+      if (Array.isArray(underlinedPositions) && underlinedPositions.length > 0) {
+        // build nodes by positions (positions: array of {start, end})
+        const nodes = [];
+        let lastIndex = 0;
+        underlinedPositions.sort((a, b) => a.start - b.start);
+        for (let i = 0; i < underlinedPositions.length; i++) {
+          const pos = underlinedPositions[i];
+          const start = Math.max(0, pos.start);
+          const end = Math.min(baseText.length, pos.end);
+          if (start > lastIndex) nodes.push(<span key={`t-${i}`}>{baseText.slice(lastIndex, start)}</span>);
+          nodes.push(<u key={`u-${i}`}>{baseText.slice(start, end)}</u>);
+          lastIndex = end;
+        }
+        if (lastIndex < baseText.length) nodes.push(<span key={`rest-${lastIndex}`}>{baseText.slice(lastIndex)}</span>);
+        return <span>{nodes}</span>;
+      }
+
+      if (Array.isArray(underlinedWords) && underlinedWords.length > 0) {
+        // underline first occurrences of provided words (case-insensitive)
+        let remaining = baseText;
+        const nodes = [];
+        while (remaining.length) {
+          let foundIndex = -1;
+          let foundWord = null;
+          for (const w of underlinedWords) {
+            const regex = new RegExp(`\\b${escapeRegExp(w)}\\b`, 'i');
+            const m = regex.exec(remaining);
+            if (m && (foundIndex === -1 || m.index < foundIndex)) {
+              foundIndex = m.index;
+              foundWord = m[0];
+            }
+          }
+          if (foundIndex === -1) {
+            nodes.push(<span key={nodes.length}>{remaining}</span>);
+            break;
+          }
+          if (foundIndex > 0) nodes.push(<span key={nodes.length}>{remaining.slice(0, foundIndex)}</span>);
+          nodes.push(<u key={nodes.length} data-uline={foundWord}>{remaining.substr(foundIndex, foundWord.length)}</u>);
+          remaining = remaining.slice(foundIndex + foundWord.length);
+        }
+        return <span>{nodes}</span>;
+      }
+
+      return <span>{baseText}</span>;
+    } catch (e) {
+      return <span>{baseText}</span>;
+    }
+  }
+
+  function escapeRegExp(string) {
+    return String(string).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
 
   if (loading) {
     return (
@@ -500,7 +539,7 @@ export default function TestPage() {
 
   if (!currentChapter && !showResult) {
     return (
-      <div>
+      <div className="p-6">
         لا توجد فصول متاحة لهذا الاختبار.
         <Button onClick={() => router.push('/dashboard')} variant="outline" className="mt-4">الرجوع للاختبارات</Button>
       </div>
@@ -509,57 +548,59 @@ export default function TestPage() {
 
   if (showResult) {
     return (
-      <div>
-        <h1 className="text-2xl font-bold mb-4">{test?.title}</h1>
+      <div className="max-w-4xl mx-auto p-6">
+        <h1 className="text-2xl font-bold mb-4"> {test?.title} </h1>
 
-        <h2 className="text-xl font-semibold mb-2">النتيجة النهائية</h2>
+        <h2 className="text-lg font-semibold mt-4">النتيجة النهائية</h2>
 
-        <div className="grid grid-cols-2 gap-4 max-w-md">
+        <div className="grid grid-cols-2 gap-4 mt-4">
           <div className="bg-white p-4 rounded shadow">
             <div className="text-sm text-slate-500">الاستماع</div>
-            <div className="text-lg font-semibold">{scores.listening} / 20</div>
+            <div className="text-xl font-bold">{scores.listening} / 20</div>
           </div>
           <div className="bg-white p-4 rounded shadow">
             <div className="text-sm text-slate-500">القراءة</div>
-            <div className="text-lg font-semibold">{scores.reading} / 40</div>
+            <div className="text-xl font-bold">{scores.reading} / 40</div>
           </div>
           <div className="bg-white p-4 rounded shadow">
             <div className="text-sm text-slate-500">القواعد</div>
-            <div className="text-lg font-semibold">{scores.grammar} / 40</div>
+            <div className="text-xl font-bold">{scores.grammar} / 40</div>
           </div>
           <div className="bg-white p-4 rounded shadow">
             <div className="text-sm text-slate-500">المجموع</div>
-            <div className="text-lg font-semibold">{scores.total} / 100</div>
+            <div className="text-xl font-bold">{scores.total} / 100</div>
+            <div className="text-sm text-slate-500 mt-2">النسبة</div>
+            <div className="text-lg font-semibold">{scores.percentage}%</div>
           </div>
         </div>
-
-        <div className="mt-4">النسبة: <strong>{scores.percentage}%</strong></div>
 
         {wrongAnswers.length > 0 && (
           <div className="mt-6">
             <h3 className="text-lg font-semibold mb-2">أسئلة أخطأت بها</h3>
+
             <div className="bg-white rounded shadow p-4 border">
               {wrongAnswers.map((qid, i) => (
                 <div key={qid} className="py-2 border-b last:border-b-0">خطأ #{i + 1} — معرف السؤال: {qid}</div>
               ))}
-              <div className="text-sm text-slate-500 mt-2">اضغط "راجع محاولتي" لمشاهدة التصحيحات</div>
+
+              <div className="text-sm text-slate-500 mt-2">اضغط "راجع محاولتي" لمشاهدة تفاصيل الأخطاء</div>
             </div>
           </div>
         )}
 
         <div className="mt-6 flex gap-3">
-          <Button onClick={() => router.push('/dashboard')} variant="outline">الرجـوع</Button>
+          <Button onClick={() => router.push('/dashboard')} variant="outline">الرئيسية</Button>
           <Button onClick={goToReview}>راجع محاولتي</Button>
         </div>
       </div>
     );
   }
 
-  // Main render for current chapter/questions (abridged to keep file focused)
+  // --- main render for current chapter/questions ---
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-4">{test?.title}</h1>
-      <h2 className="text-lg font-semibold mb-2">{currentChapter?.title}</h2>
+    <div className="max-w-4xl mx-auto p-6">
+      <h1 className="text-2xl font-bold mb-4"> {test?.title} </h1>
+      <h2 className="text-lg font-semibold mb-3">{currentChapter?.title}</h2>
 
       <div className="bg-slate-200 h-1.5 mb-6">
         <div
@@ -568,50 +609,201 @@ export default function TestPage() {
         />
       </div>
 
-      {/* The UI rendering for listening, reading, grammar has been preserved earlier in your original file.
-          For brevity here include the main structure and reuse helper functions above.
-          If you want full detailed rendering for each question type, I can paste those blocks too. */}
-      <div>
-        {/* Example for listening intro */}
-        {currentChapter?.type === 'listening' && phase === 'intro' && (
-          <div className="max-w-3xl mx-auto mb-6">
-            <div className="bg-white rounded-lg p-8 text-center shadow-sm">
-              <Volume2 className="w-16 h-16 text-blue-600 mx-auto mb-4" />
-              <h2 className="text-2xl font-semibold mb-2">قسم الاستماع</h2>
-              <p className="text-slate-600 mb-4">اضغط ابدأ للاستماع ثم الإجابة عن أسئلة المقطع.</p>
-              <div className="flex justify-center gap-3">
-                <Button onClick={() => setPhase('questions')} className="bg-blue-600 text-white">ابدأ</Button>
-                <Button onClick={() => { setCurrentChapterIndex(ci => ci + 1); setCurrentPieceIndex(0); }} variant="outline">تخطي</Button>
+      <main>
+        {validationError && <div className="mb-4 p-3 rounded bg-yellow-50 text-yellow-700 border border-yellow-200">{validationError}</div>}
+
+        {/* Listening */}
+        {currentChapter?.type === 'listening' && (
+          <div>
+            {phase === 'intro' && (
+              <div className="max-w-3xl mx-auto mb-6">
+                <div className="bg-white rounded-lg p-8 text-center shadow-sm">
+                  <Volume2 className="w-16 h-16 text-blue-600 mx-auto mb-4" />
+                  <h2 className="text-2xl font-semibold mb-2">قسم الاستماع</h2>
+                  <p className="text-slate-600 mb-4">اضغط ابدأ للاستماع ثم الإجابة عن أسئلة المقطع.</p>
+
+                  <div className="flex justify-center gap-3">
+                    <Button onClick={() => setPhase('questions')} className="bg-blue-600 text-white">ابدأ</Button>
+                    <Button onClick={() => { setCurrentChapterIndex(ci => ci + 1); setCurrentPieceIndex(0); }} variant="outline">تخطي</Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {phase === 'questions' && currentPiece && (
+              <div className="max-w-4xl mx-auto space-y-6">
+                <div className="bg-white rounded-lg p-6 shadow-sm">
+                  <audio controls className="w-full" preload="none">
+                    <source src={currentPiece.audio_url} type="audio/mpeg" />
+                    متصفحك لا يدعم عناصر الصوت.
+                  </audio>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {currentPiece.listening_questions.map((q, qi) => {
+                    const answered = !!answeredMap[q.id];
+                    const marked = !!markedMap[q.id];
+                    const cls = answered ? 'bg-green-600 text-white' : 'bg-slate-200 text-slate-700';
+                    return (
+                      <button key={q.id} onClick={() => goToQuestionInCurrent(q.id)} className={`px-2 py-1 rounded ${cls}`}>
+                        {qi + 1}{marked && <span className="ml-2 text-xs">★</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {currentPiece.listening_questions.map((q, i) => (
+                  <div key={q.id} id={`q-${q.id}`} className="bg-white rounded-lg p-6 shadow-sm">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <p className="text-lg font-medium"><span className="text-blue-600 mr-2 font-semibold">{i + 1}.</span>{q.question_text}</p>
+                        <button type="button" onClick={() => toggleMark(q.id)} title="علامة للرجوع" className="text-yellow-600 ml-3">
+                          <Tag className={`w-4 h-4 ${markedMap[q.id] ? 'text-yellow-600' : 'text-slate-300'}`} />
+                        </button>
+                      </div>
+                      <button onClick={() => setActiveHintQuestion(q)} className="text-slate-500 hover:text-blue-600"><Lightbulb className="w-5 h-5" /></button>
+                    </div>
+
+                    <div className="space-y-2">
+                      {q.options?.map((opt, oi) => (
+                        <label key={oi} className={`flex items-center p-4 border-2 rounded-md cursor-pointer ${answers[q.id] === opt ? 'border-blue-600' : 'border-slate-200'}`}>
+                          <input type="radio" name={`q-${q.id}`} value={opt} onChange={() => handleSelect(q.id, opt)} checked={answers[q.id] === opt} className="w-4 h-4 text-blue-600 mr-3" />
+                          <span className="font-medium mr-2">{String.fromCharCode(65 + oi)}.</span>
+                          <span>{opt}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                <div className="flex justify-between mt-4">
+                  <Button onClick={handlePrev} variant="outline"><ArrowLeft className="w-4 h-4 ml-2" /> السابق</Button>
+                  <Button onClick={handleNext} className="bg-blue-600 text-white">التالي <ChevronRight className="w-4 h-4 ml-2" /></Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Reading */}
+        {currentChapter?.type === 'reading' && currentPiece && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-white rounded-lg p-6 shadow-sm max-h-[70vh] overflow-y-auto">
+              <h3 className="text-xl font-bold mb-4">{currentPiece.passage_title}</h3>
+              <div className="whitespace-pre-line leading-relaxed text-slate-700">{currentPiece.passage}</div>
+            </div>
+
+            <div>
+              <div className="flex flex-wrap gap-2 mb-4">
+                {currentPiece.reading_questions.map((q, idx) => {
+                  const answered = !!answeredMap[q.id];
+                  const marked = !!markedMap[q.id];
+                  const cls = answered ? 'bg-green-600 text-white' : 'bg-slate-200 text-slate-700';
+                  return (<button key={q.id} onClick={() => goToQuestionInCurrent(q.id)} className={`px-2 py-1 rounded ${cls}`}>{idx + 1}{marked && <span className="ml-2 text-xs">★</span>}</button>);
+                })}
+              </div>
+
+              {currentPiece.reading_questions.map((q, qi) => (
+                <div key={q.id} id={`q-${q.id}`} className="bg-white rounded-lg p-6 shadow-sm mb-3">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <p className="text-lg font-medium"><span className="text-emerald-600 mr-2 font-semibold">{qi + 1}.</span>{q.question_text}</p>
+                      <button type="button" onClick={() => toggleMark(q.id)} title="علامة للرجوع" className="text-yellow-600 ml-3">
+                        <Tag className={`w-4 h-4 ${markedMap[q.id] ? 'text-yellow-600' : 'text-slate-300'}`} />
+                      </button>
+                    </div>
+                    <button onClick={() => setActiveHintQuestion(q)} className="text-slate-500 hover:text-emerald-600 ml-4"><Lightbulb className="w-5 h-5" /></button>
+                  </div>
+
+                  {q.base_text && <div className="mb-3 text-slate-700">{renderUnderlined(q.base_text, q.underlined_words, q.underlined_positions)}</div>}
+
+                  <div className="space-y-2">
+                    {q.options?.map((opt, oi) => (
+                      <label key={oi} className={`flex items-center p-4 border-2 rounded-md cursor-pointer ${answers[q.id] === opt ? 'border-emerald-600' : 'border-slate-200'}`}>
+                        <input type="radio" name={`q-${q.id}`} value={opt} onChange={() => handleSelect(q.id, opt)} checked={answers[q.id] === opt} className="w-4 h-4 text-emerald-600 mr-3" />
+                        <span className="font-medium mr-2">{String.fromCharCode(65 + oi)}.</span>
+                        <span>{opt}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              <div className="flex justify-between mt-4">
+                <Button onClick={handlePrev} variant="outline"><ArrowLeft className="w-4 h-4 ml-2" /> السابق</Button>
+                <Button onClick={handleNext} className="bg-emerald-600 text-white">التالي <ChevronRight className="w-4 h-4 ml-2" /></Button>
               </div>
             </div>
           </div>
         )}
 
-        {/* You can expand the full question rendering blocks here (reading/listening/grammar) as in your original file. */}
-      </div>
+        {/* Grammar */}
+        {currentChapter?.type === 'grammar' && (
+          <div className="max-w-3xl mx-auto">
+            {(() => {
+              const q = currentChapter.questions[currentPieceIndex];
+              if (!q) return null;
+              const marked = !!markedMap[q.id];
+              return (
+                <div className="bg-white rounded-lg p-8 shadow-sm">
+                  <div className="flex items-start justify-between mb-6">
+                    <div className="flex items-center gap-3">
+                      <p className="text-xl font-medium"><span className="text-slate-600 font-semibold mr-2">سؤال {currentPieceIndex + 1} من {currentChapter.questions.length}</span></p>
+                      <button type="button" onClick={() => toggleMark(q.id)} className="text-yellow-600 ml-3" title="علامة للرجوع">
+                        <Tag className={`w-4 h-4 ${marked ? 'text-yellow-600' : 'text-slate-300'}`} />
+                      </button>
+                    </div>
+                    <button onClick={() => setActiveHintQuestion(q)} className="text-slate-500 hover:text-slate-700 ml-4"><Lightbulb className="w-5 h-5" /></button>
+                  </div>
 
-      {/* Marked panel button */}
+                  {q.base_text && <div className="mb-4 text-slate-700">{renderUnderlined(q.base_text, q.underlined_words, q.underlined_positions)}</div>}
+
+                  <p className="text-lg text-slate-900 mb-6 leading-relaxed">{q.question_text}</p>
+
+                  <div className="space-y-3">
+                    {q.options?.map((opt, oi) => (
+                      <label key={oi} className={`flex items-center p-4 border-2 rounded-md cursor-pointer ${answers[q.id] === opt ? 'border-slate-600' : 'border-slate-200'}`}>
+                        <input type="radio" name={`q-${q.id}`} value={opt} onChange={() => handleSelect(q.id, opt)} checked={answers[q.id] === opt} className="w-4 h-4 text-slate-600 mr-3" />
+                        <span className="font-medium mr-2">{String.fromCharCode(65 + oi)}.</span>
+                        <span>{opt}</span>
+                      </label>
+                    ))}
+                  </div>
+
+                  <div className="mt-8 flex justify-between">
+                    <Button onClick={handlePrev} variant="outline"><ArrowLeft className="w-4 h-4 ml-2" /> السابق</Button>
+                    <Button onClick={handleNext} className="bg-slate-600 text-white">{currentPieceIndex < currentChapter.questions.length - 1 ? 'التالي' : 'إنهاء الاختبار'} <ChevronRight className="w-4 h-4 ml-2" /></Button>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+      </main>
+
+      {/* Floating Marked */}
       <div style={{ position: 'fixed', right: 20, bottom: 20, zIndex: 60 }}>
         <button onClick={() => setShowMarkedPanel(prev => !prev)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-full shadow-lg flex items-center gap-2" title="المسودات">
           <Tag className="w-5 h-5" />
           <span className="font-semibold">{markedList.length}</span>
         </button>
+
         {showMarkedPanel && (
           <div className="mt-3 w-80 bg-white border rounded shadow p-3 text-right">
             <div className="flex items-center justify-between mb-2">
-              <div className="font-semibold">الأسئلة المـــوســـوومــة</div>
+              <div className="font-semibold">الأسئلة الموسومة</div>
               <button onClick={() => setShowMarkedPanel(false)} className="text-sm text-slate-500">إغلاق</button>
             </div>
 
             {markedList.length === 0 ? (
-              <div className="text-sm text-slate-500">ما فيـه علامــات</div>
+              <div className="text-sm text-slate-500">ما فيه علامات</div>
             ) : (
               <div className="space-y-2 max-h-56 overflow-auto">
                 {markedList.map((qid, idx) => (
                   <div key={qid} className="flex items-center justify-between border-b pb-2">
                     <div className="text-sm">سؤال {idx + 1}</div>
                     <div className="flex items-center gap-2">
-                      <Button size="sm" onClick={() => { setShowMarkedPanel(false); goToQuestionInCurrent(qid); }}>اذهـب</Button>
+                      <Button size="sm" onClick={() => { setShowMarkedPanel(false); goToQuestionInCurrent(qid); }}>اذهب</Button>
                       <Button size="sm" variant="outline" onClick={() => toggleMark(qid)}>إزالة</Button>
                     </div>
                   </div>
