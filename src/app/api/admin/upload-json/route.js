@@ -2,18 +2,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  console.warn('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars');
-}
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-  auth: { persistSession: false },
-  global: { headers: { 'x-upsert-source': 'upload-json-route' } }
-});
-
 function ensureArray(x) {
   return Array.isArray(x) ? x : [];
 }
@@ -99,7 +87,7 @@ function normalizeChapter(ch) {
   return base;
 }
 
-async function upsertChapterRow(test_id, ch) {
+async function upsertChapterRow(supabase, test_id, ch) {
   const chapterRow = {
     test_id: test_id ?? null,
     idx: ch.idx,
@@ -118,6 +106,19 @@ async function upsertChapterRow(test_id, ch) {
   return data?.id;
 }
 
+function getSupabaseClient() {
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !key) {
+    throw new Error('Missing SUPABASE URL or key env vars');
+  }
+
+  return createClient(url, key, {
+    auth: { persistSession: false }
+  });
+}
+
 export async function POST(request) {
   try {
     const contentType = request.headers.get('content-type') || '';
@@ -130,6 +131,8 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Missing chapters in JSON payload' }, { status: 400 });
     }
 
+    const supabase = getSupabaseClient();
+
     const incomingChapters = Array.isArray(payload.chapters) ? payload.chapters : [payload.chapters];
     const normalizedChapters = incomingChapters.map(normalizeChapter);
     const test_id = payload.test_id ?? null;
@@ -138,7 +141,7 @@ export async function POST(request) {
 
     for (const ch of normalizedChapters) {
       try {
-        const chapterId = await upsertChapterRow(test_id, ch);
+        const chapterId = await upsertChapterRow(supabase, test_id, ch);
 
         if (ch.type === 'listening') {
           for (const p of ch.pieces || []) {
