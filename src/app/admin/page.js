@@ -12,7 +12,6 @@ export default function UploadJsonPage() {
   const [message, setMessage] = useState(null);
   const [detailedErrors, setDetailedErrors] = useState(null);
 
-  // helpers
   const readFileAsJson = (file) =>
     new Promise((resolve, reject) => {
       if (!file) return resolve(null);
@@ -31,14 +30,12 @@ export default function UploadJsonPage() {
     });
 
   const buildPayload = async () => {
-    // If full file provided, prefer it (but still allow separate files to merge)
     let payload = { test: null, chapters: [] };
     if (fileFull) {
       const fullJson = await readFileAsJson(fileFull);
       if (!fullJson) throw new Error('Full file is empty or invalid JSON');
       payload = fullJson;
     } else {
-      // merge separate files
       if (fileGrammar) {
         const g = await readFileAsJson(fileGrammar);
         if (g) {
@@ -63,11 +60,9 @@ export default function UploadJsonPage() {
           else payload.chapters.push(...(l?.listening ? l.listening : []));
         }
       }
-      // remove empty entries
       payload.chapters = payload.chapters.filter(Boolean);
     }
 
-    // attach optional metadata
     if (description) payload.test = payload.test ?? {};
     if (description) payload.test.description = description;
 
@@ -109,7 +104,6 @@ export default function UploadJsonPage() {
 
       console.info('upload-json status', res.status, 'body', body);
 
-      // handle common response shapes from our route
       if (!body) throw new Error('Empty response from server');
 
       if (body.error) {
@@ -121,7 +115,6 @@ export default function UploadJsonPage() {
       }
 
       if (body.results) {
-        // log full details for debugging
         console.group('upload-json results');
         console.log('chapters:', body.results.chapters || []);
         console.log('errors:', body.results.errors || []);
@@ -134,14 +127,12 @@ export default function UploadJsonPage() {
           return;
         }
 
-        // success
         setMessage('✅ تم رفع الملف بنجاح');
         setDetailedErrors(null);
         setLoading(false);
         return;
       }
 
-      // fallback
       setMessage('✅ تم معالجة الرد (تحقق من الكونسول لمزيد من التفاصيل)');
       setLoading(false);
     } catch (err) {
@@ -219,11 +210,11 @@ export default function UploadJsonPage() {
       )}
 
       <div style={{ marginTop: 18, color: '#666', fontSize: 13 }}>
-        ملاحظات:
+        <div>{`ملاحظات:`}</div>
         <ul>
-          <li>فتح الكونسول (F12) للاطّلاع على تفاصيل الرد الخام من السيرفر (ستجد body و results.errors هناك)</li>
-          <li>إذا ظهر خطأ "Server configuration error" تأكد أن متغيرات البيئة SUPABASE_URL و SUPABASE_SERVICE_ROLE_KEY موجودة في بيئة التشغيل</li>
-          <li>إذا ظهر خطأ متعلق بقاعدة البيانات انسخ تفاصيل body.results.errors أو سجلات السيرفر وأرسلها لي لأعطيك تصحيح مباشر</li>
+          <li>{`افتح الكونسول (F12) للاطّلاع على تفاصيل الرد الخام من السيرفر — ستجد body و results.errors هناك`}</li>
+          <li>{`إذا ظهر خطأ "Server configuration error" تأكد أن متغيرات البيئة SUPABASE_URL و SUPABASE_SERVICE_ROLE_KEY موجودة في بيئة التشغيل`}</li>
+          <li>{`إذا ظهر خطأ متعلق بقاعدة البيانات انسخ تفاصيل body.results.errors أو سجلات السيرفر وأرسلها لي لأعطيك تصحيح مباشر`}</li>
         </ul>
       </div>
     </div>
