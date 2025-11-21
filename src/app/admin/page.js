@@ -11,7 +11,7 @@ export default function AdminTestsPage() {
   const [tests, setTests] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // رفع اختبار جديد
+  // حقول الرفع
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [grammarFile, setGrammarFile] = useState(null);
@@ -21,72 +21,171 @@ export default function AdminTestsPage() {
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
 
-  // ✅ جلب كل الاختبارات
   useEffect(() => {
     loadTests();
   }, []);
 
   const loadTests = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('tests')
-      .select('id, title, description, availability, created_at')
-      .order('created_at', { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from('tests')
+        .select('id, title, description, availability, created_at')
+        .order('created_at', { ascending: false });
 
-    if (error) {
-      console.error(error);
-    } else {
-      setTests(data || []);
+      if (error) {
+        console.error('loadTests error', error);
+        setTests([]);
+      } else {
+        setTests(data || []);
+      }
+    } catch (err) {
+      console.error('loadTests exception', err);
+      setTests([]);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  // ✅ رفع اختبار جديد
+  // ------------------------------
+  // دوال مساعدة آمنة لتحليل الملفات إلى مصفوفة فصول
+  // ------------------------------
+  const parseFileToChapters = async (file) => {
+    // دائمًا تعيد مصفوفة (حتى لو فشل التحليل) لمنع أخطاء "not iterable"
+    if (!file) return [];
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+
+      // حالة: body.chapters: [ ... ]
+      if (Array.isArray(json.chapters) && json.chapters.length) return json.chapters;
+
+      // حالة: الملف نفسه قد يكون مصفوفة من الفصول
+      if (Array.isArray(json) && json.length) return json;
+
+      // حالة: body.chapter: { ... } -> [ chapter ]
+      if (json.chapter && typeof json.chapter === 'object') return [json.chapter];
+
+      // حالة: الملف نفسه قد يمثل فصل مفرد يحتوي questions أو pieces
+      if (json && typeof json === 'object' && (Array.isArray(json.questions) || Array.isArray(json.pieces))) {
+        return [json];
+      }
+
+      // لا نجد بنية فصل واضحة -> رجّع مصفوفة فارغة
+      return [];
+    } catch (err) {
+      // لا نُرمِ الاستثناء لكي لا يكسر تدفق الرفع؛ نرجع مصفوفة فارغة ونطبع الخطأ
+      console.error('parseFileToChapters error for', file?.name, err);
+      return [];
+    }
+  };
+
+  const safeSpread = (x) => (Array.isArray(x) ? x : []);
+
+  const normalizeChapter = (ch) => {
+    const chapter = { ...ch };
+    if (!chapter.type) {
+      if (Array.isArray(chapter.questions)) chapter.type = 'grammar';
+      else if (Array.isArray(chapter.pieces)) {
+        const firstPiece = Array.isArray(chapter.pieces) ? chapter.pieces[0] : null;
+        if (firstPiece && (firstPiece.audio_url || firstPiece.transcript)) chapter.type = 'listening';
+        else chapter.type = 'reading';
+      } else chapter.type = 'unknown';
+    }
+    chapter.idx = typeof chapter.idx === 'number' ? chapter.idx : null;
+    chapter.title = chapter.title || null;
+    chapter.duration_seconds = typeof chapter.duration_seconds === 'number' ? chapter.duration_seconds : null;
+    return chapter;
+  };
+
+  // ------------------------------
+  // الدالة الرئيسية لرفع الملفات
+  // ------------------------------
   const handleUpload = async () => {
+    // تحقق مبكر
     if (!title) {
       setMessage('❌ العنوان مطلوب');
       return;
     }
-
     if (!grammarFile && !readingFile && !listeningFile && !fullFile) {
       setMessage('❌ اختر على الأقل ملف واحد (Grammar / Reading / Listening / Full)');
       return;
     }
 
+    setUploading(true);
+    setMessage('');
+
     try {
-      setUploading(true);
-      setMessage('');
-
-      const parseFile = async (file) => {
-        if (!file) return [];
-        const text = await file.text();
-        const json = JSON.parse(text);
-        return json.chapters || [];
-      };
-
       let chapters = [];
 
       if (fullFile) {
-        // إذا رفع ملف كامل نستخدمه مباشرة
-        const text = await fullFile.text();
-        const json = JSON.parse(text);
-        chapters = json.chapters || [];
+        // الملف الكامل يفترض أن يحتوي root.chapters أو فصل واحد
+        const parsed = await parseFileToChapters(fullFile);
+        chapters = parsed;
       } else {
-        // دمج الملفات الثلاثة إذا رفعت منفصلة
-        const grammarChapters = await parseFile(grammarFile);
-        const readingChapters = await parseFile(readingFile);
-        const listeningChapters = await parseFile(listeningFile);
-        chapters = [...grammarChapters, ...readingChapters, ...listeningChapters];
+        // ملفات منفصلة: أرسلها كلها إلى parse في نفس الوقت
+        const [grammarChapters, readingChapters, listeningChapters] = await Promise.all([
+          parseFileToChapters(grammarFile),
+          parseFileToChapters(readingFile),
+          parseFileToChapters(listeningFile),
+        ]);
+
+        // طباعة تصحيحية لمساعدتك أثناء التطوير
+        console.log('parsed chapters counts:', {
+          g: grammarChapters.length,
+          r: readingChapters.length,
+          l: listeningChapters.length,
+        });
+        console.log('sample parsed contents:', {
+          grammarSample: grammarChapters[0],
+          readingSample: readingChapters[0],
+          listeningSample: listeningChapters[0],
+        });
+
+        chapters = [
+          ...safeSpread(grammarChapters),
+          ...safeSpread(readingChapters),
+          ...safeSpread(listeningChapters),
+        ];
       }
 
+      // تطبيع الفصول وفحص وجود أسئلة أو pieces
+      const normalized = chapters.map(normalizeChapter);
+      const filtered = normalized.filter((c) => {
+        const hasQuestions = Array.isArray(c.questions) && c.questions.length > 0;
+        const hasPieces = Array.isArray(c.pieces) && c.pieces.length > 0;
+        if (!hasQuestions && !hasPieces) {
+          console.warn('Filtered out chapter (no questions/pieces):', c);
+        }
+        return hasQuestions || hasPieces;
+      });
+
+      console.log('final chapters after normalize & filter count:', filtered.length);
+
+      if (!filtered.length) {
+        setMessage('❌ لا توجد فصول/أسئلة صالحة في الملفات المرفوعة');
+        setUploading(false);
+        return;
+      }
+
+      // تجهيز الجسم للـ API
       const body = {
         title,
         description,
         availability: 'all',
         is_published: true,
-        chapters,
+        chapters: filtered,
       };
 
+      // طبع حجم payload لمراقبة المشاكل المحتملة الكبيرة
+      try {
+        const bodyStr = JSON.stringify(body);
+        console.log('payload size (chars):', bodyStr.length);
+      } catch (e) {
+        console.warn('Unable to stringify body for size check', e);
+      }
+
+      // إرسال إلى route
       const res = await fetch('/api/admin/upload-json', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -94,21 +193,26 @@ export default function AdminTestsPage() {
       });
 
       const data = await res.json();
+
       if (data.success) {
         setMessage(`✅ تم رفع الاختبار بنجاح (ID: ${data.test_id})`);
+        // إعادة تهيئة الحقول
         setTitle('');
         setDescription('');
         setGrammarFile(null);
         setReadingFile(null);
         setListeningFile(null);
         setFullFile(null);
-        loadTests(); // إعادة تحميل القائمة
+        // إعادة تحميل الاختبارات
+        loadTests();
       } else {
-        setMessage(`❌ خطأ: ${data.error}`);
+        // عرض رسالة مفصّلة إن وُجدت
+        console.error('upload-json response error', data);
+        setMessage(`❌ خطأ من السيرفر: ${data.error || 'غير معروف'}`);
       }
     } catch (err) {
-      console.error(err);
-      setMessage('❌ حدث خطأ أثناء رفع الملفات');
+      console.error('handleUpload exception', err);
+      setMessage(`❌ حدث خطأ أثناء رفع الملفات: ${err.message || String(err)}`);
     } finally {
       setUploading(false);
     }
@@ -118,7 +222,6 @@ export default function AdminTestsPage() {
     <div className="p-8 max-w-6xl mx-auto" dir="rtl">
       <h1 className="text-3xl font-bold mb-6">📋 لوحة تحكم الاختبارات</h1>
 
-      {/* قسم رفع اختبار جديد */}
       <div className="bg-white shadow rounded-lg p-6 mb-10">
         <h2 className="text-xl font-semibold mb-4">📤 رفع اختبار جديد</h2>
 
@@ -143,25 +246,24 @@ export default function AdminTestsPage() {
           />
         </div>
 
-        {/* خانات رفع منفصلة */}
         <div className="mb-4">
           <label className="block mb-1 font-semibold">📘 ملف Grammar</label>
-          <input type="file" accept=".json" onChange={(e) => setGrammarFile(e.target.files[0])} />
+          <input type="file" accept=".json" onChange={(e) => setGrammarFile(e.target.files[0] ?? null)} />
         </div>
 
         <div className="mb-4">
           <label className="block mb-1 font-semibold">📖 ملف Reading</label>
-          <input type="file" accept=".json" onChange={(e) => setReadingFile(e.target.files[0])} />
+          <input type="file" accept=".json" onChange={(e) => setReadingFile(e.target.files[0] ?? null)} />
         </div>
 
         <div className="mb-4">
           <label className="block mb-1 font-semibold">🎧 ملف Listening</label>
-          <input type="file" accept=".json" onChange={(e) => setListeningFile(e.target.files[0])} />
+          <input type="file" accept=".json" onChange={(e) => setListeningFile(e.target.files[0] ?? null)} />
         </div>
 
         <div className="mb-4">
           <label className="block mb-1 font-semibold">📂 ملف كامل (يشمل كل الأقسام)</label>
-          <input type="file" accept=".json" onChange={(e) => setFullFile(e.target.files[0])} />
+          <input type="file" accept=".json" onChange={(e) => setFullFile(e.target.files[0] ?? null)} />
         </div>
 
         <button
@@ -175,7 +277,6 @@ export default function AdminTestsPage() {
         {message && <p className="mt-4">{message}</p>}
       </div>
 
-      {/* قسم عرض كل الاختبارات */}
       <div className="bg-white shadow rounded-lg p-6">
         <h2 className="text-xl font-semibold mb-4">📚 قائمة الاختبارات</h2>
 
