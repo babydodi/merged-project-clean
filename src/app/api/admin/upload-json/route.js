@@ -3,11 +3,26 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
 /**
- * Upload JSON route (App Router)
- * - Create supabase client at runtime
- * - Normalize incoming shapes
- * - Pick only allowed columns per table before upsert
- * - Return detailed per-chapter errors
+ * Robust upload-json route for App Router
+ * - Creates Supabase client at runtime (prevents build-time failure)
+ * - Normalizes incoming JSON shapes
+ * - Picks only allowed DB columns per table (matches schema you provided)
+ * - Returns detailed per-chapter errors (message + stack)
+ * - Emits server logs for debugging (console.error)
+ *
+ * Requirements (ensure these exist in the runtime env):
+ * - SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL)
+ * - SUPABASE_SERVICE_ROLE_KEY (or NEXT_PUBLIC_SUPABASE_ANON_KEY as fallback)
+ *
+ * Schema expectations (from your provided schema):
+ * - chapters(test_id, idx)
+ * - listening_pieces(chapter_id, idx)
+ * - listening_questions(listening_piece_id, idx)
+ * - reading_pieces(chapter_id, idx)
+ * - reading_questions(reading_piece_id, idx)
+ * - grammar_questions(chapter_id, idx)
+ *
+ * If you want these ON CONFLICT upserts to succeed, ensure the corresponding UNIQUE constraints exist.
  */
 
 function ensureArray(x) {
@@ -16,9 +31,7 @@ function ensureArray(x) {
 
 function pick(obj, keys) {
   const out = {};
-  for (const k of keys) {
-    if (obj[k] !== undefined) out[k] = obj[k];
-  }
+  for (const k of keys) if (obj[k] !== undefined) out[k] = obj[k];
   return out;
 }
 
@@ -30,7 +43,7 @@ function normalizeListeningQuestion(q) {
     answer: q.answer != null ? q.answer : null,
     hint: q.hint ?? null,
     explanation: q.explanation ?? null
-    // intentionally exclude base_text / underlined_* for listening_questions (not in schema)
+    // base_text and underlined_* intentionally omitted for listening_questions (not in your schema)
   };
 }
 
@@ -89,15 +102,11 @@ function normalizeChapter(ch) {
     duration_seconds: ch.duration_seconds ?? null
   };
 
-  if (ch.type === 'listening') {
-    base.pieces = ensureArray(ch.pieces).map(normalizeListeningPiece);
-  } else if (ch.type === 'reading') {
-    base.pieces = ensureArray(ch.pieces).map(normalizeReadingPiece);
-  } else if (ch.type === 'grammar') {
-    base.questions = ensureArray(ch.questions).map(normalizeGrammarQuestion);
-  } else {
-    base.raw = ch;
-  }
+  if (ch.type === 'listening') base.pieces = ensureArray(ch.pieces).map(normalizeListeningPiece);
+  else if (ch.type === 'reading') base.pieces = ensureArray(ch.pieces).map(normalizeReadingPiece);
+  else if (ch.type === 'grammar') base.questions = ensureArray(ch.questions).map(normalizeGrammarQuestion);
+  else base.raw = ch;
+
   return base;
 }
 
@@ -110,7 +119,6 @@ async function upsertChapterRow(supabase, test_id, ch) {
     duration_seconds: ch.duration_seconds
   };
 
-  // onConflict requires matching unique constraint in DB (we assume you created them)
   const { data, error } = await supabase
     .from('chapters')
     .upsert(chapterRow, { onConflict: ['test_id', 'idx'] })
@@ -139,11 +147,16 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Please send JSON body (Content-Type: application/json)' }, { status: 400 });
     }
 
-    const payload = await request.json();
+    const payload = await request.json().catch(e => {
+      console.error('Failed to parse JSON body', e);
+      return null;
+    });
+
     if (!payload || !payload.chapters) {
       return NextResponse.json({ error: 'Missing chapters in JSON payload' }, { status: 400 });
     }
 
+    // create supabase client at runtime
     let supabase;
     try {
       supabase = getSupabaseClient();
@@ -188,7 +201,6 @@ export async function POST(request) {
             const listening_piece_id = foundPiece?.id;
 
             const questionRows = (p.listening_questions || []).map(q => {
-              // normalize and pick only allowed cols for listening_questions
               const normalized = normalizeListeningQuestion(q);
               return pick({ listening_piece_id, ...normalized }, LISTENING_QUESTION_COLS);
             });
