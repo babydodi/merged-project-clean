@@ -21,7 +21,7 @@ export default function TestPage() {
   // navigation
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
   const [currentPieceIndex, setCurrentPieceIndex] = useState(0);
-  const [phase, setPhase] = useState('intro'); // for listening
+  const [phase, setPhase] = useState('intro'); // for listening: 'intro' | 'questions'
   const [showResult, setShowResult] = useState(false);
 
   // answers & tracking
@@ -34,6 +34,9 @@ export default function TestPage() {
   // results
   const [scores, setScores] = useState({ listening: 0, reading: 0, grammar: 0, total: 0, percentage: 0 });
   const [wrongAnswers, setWrongAnswers] = useState([]);
+
+  // show intro once per chapter (prevents re-showing when moving between pieces)
+  const [seenIntroMap, setSeenIntroMap] = useState({}); // { chapterId: true }
 
   const questionRefs = useRef({});
 
@@ -91,7 +94,7 @@ export default function TestPage() {
             .select(
               `id, audio_url, transcript, idx,
               listening_questions (
-                id, question_text, options, answer, hint, explanation, idx
+                id, question_text, options, answer, hint, explanation, idx, base_text, underlined_words, underlined_positions
               )`
             )
             .eq('chapter_id', ch.id)
@@ -134,9 +137,10 @@ export default function TestPage() {
       });
 
       setChapters(assembled);
+      setSeenIntroMap({}); // reset seen map on new load
       setCurrentChapterIndex(0);
       setCurrentPieceIndex(0);
-      setPhase('intro');
+      // showIntroOnceForChapter will set phase appropriately via effect below
       setShowResult(false);
       setAnswers({});
       setAnsweredMap({});
@@ -157,6 +161,27 @@ export default function TestPage() {
     if (currentChapter.type === 'grammar') return null;
     return currentChapter.pieces?.[currentPieceIndex] || null;
   }, [currentChapter, currentPieceIndex]);
+
+  // show intro once per chapter helper
+  function showIntroOnceForChapter(chapter) {
+    if (!chapter) {
+      setPhase('questions');
+      return;
+    }
+    if (!seenIntroMap[chapter.id]) {
+      setSeenIntroMap(prev => ({ ...prev, [chapter.id]: true }));
+      setPhase('intro');
+    } else {
+      setPhase('questions');
+    }
+  }
+
+  // when chapter changes, decide phase
+  useEffect(() => {
+    const ch = chapters[currentChapterIndex];
+    showIntroOnceForChapter(ch);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentChapterIndex, chapters]);
 
   // save answers of current piece/chapter into question_attempts
   const savePieceAnswers = async (chapterType) => {
@@ -190,6 +215,9 @@ export default function TestPage() {
           is_correct: selectedChoice != null ? String(selectedChoice).trim() === String(q.answer).trim() : false,
           answered_at: new Date().toISOString(),
         });
+
+        // mark answered in UI
+        setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
       }
     }
 
@@ -368,8 +396,9 @@ export default function TestPage() {
     if (currentChapter.type === 'listening') {
       const last = currentChapter.pieces.length - 1;
       if (currentPieceIndex < last) {
+        // move to next piece in same chapter — do not show intro again
         setCurrentPieceIndex(i => i + 1);
-        setPhase('intro');
+        setPhase('questions');
         return;
       } else {
         const unansweredInChapter = getUnansweredInChapter(currentChapter);
@@ -380,9 +409,9 @@ export default function TestPage() {
             return;
           }
         }
+        // move to next chapter, intro shown once for that chapter by effect
         setCurrentChapterIndex(ci => ci + 1);
         setCurrentPieceIndex(0);
-        setPhase('intro');
         return;
       }
     }
@@ -391,6 +420,7 @@ export default function TestPage() {
       const last = currentChapter.pieces.length - 1;
       if (currentPieceIndex < last) {
         setCurrentPieceIndex(i => i + 1);
+        // reading pieces: no intro behavior changes
         return;
       } else {
         const unansweredInChapter = getUnansweredInChapter(currentChapter);
@@ -400,7 +430,6 @@ export default function TestPage() {
         }
         setCurrentChapterIndex(ci => ci + 1);
         setCurrentPieceIndex(0);
-        setPhase('intro');
         return;
       }
     }
@@ -451,8 +480,15 @@ export default function TestPage() {
   const handlePrev = async () => {
     if (!currentChapter) return;
     if (currentChapter.type === 'listening') {
-      if (phase === 'questions') { setPhase('intro'); return; }
-      await savePieceAnswers('listening');
+      if (phase === 'questions' && currentPieceIndex === 0) { 
+        // if at first piece and in questions, go back to intro of this chapter (if shown once before)
+        if (!seenIntroMap[currentChapter.id]) setPhase('intro');
+        else setPhase('intro'); // show intro again if user wants; you can change this behaviour
+        return;
+      }
+      if (phase === 'questions') {
+        await savePieceAnswers('listening');
+      }
       if (currentPieceIndex > 0) setCurrentPieceIndex(i => i - 1);
     } else if (currentChapter.type === 'reading') {
       await savePieceAnswers('reading');
@@ -501,6 +537,7 @@ export default function TestPage() {
           let foundIndex = -1;
           let foundWord = null;
           for (const w of underlinedWords) {
+            if (!w) continue;
             const regex = new RegExp(`\\b${escapeRegExp(w)}\\b`, 'i');
             const m = regex.exec(remaining);
             if (m && (foundIndex === -1 || m.index < foundIndex)) {
@@ -624,7 +661,8 @@ export default function TestPage() {
 
                   <div className="flex justify-center gap-3">
                     <Button onClick={() => setPhase('questions')} className="bg-blue-600 text-white">ابدأ</Button>
-                    <Button onClick={() => { setCurrentChapterIndex(ci => ci + 1); setCurrentPieceIndex(0); }} variant="outline">تخطي</Button>
+                    {/* skip no longer moves to next chapter; it simply proceeds to questions for this chapter */}
+                    <Button onClick={() => setPhase('questions')} variant="outline">تخطي</Button>
                   </div>
                 </div>
               </div>
@@ -663,6 +701,13 @@ export default function TestPage() {
                       </div>
                       <button onClick={() => setActiveHintQuestion(q)} className="text-slate-500 hover:text-blue-600"><Lightbulb className="w-5 h-5" /></button>
                     </div>
+
+                    {/* render base_text with underlines if present */}
+                    {q.base_text && (
+                      <div className="mb-3 text-slate-700">
+                        {renderUnderlined(q.base_text, q.underlined_words, q.underlined_positions)}
+                      </div>
+                    )}
 
                     <div className="space-y-2">
                       {q.options?.map((opt, oi) => (
