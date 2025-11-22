@@ -19,7 +19,7 @@ export default function TestPage() {
 
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
   const [currentPieceIndex, setCurrentPieceIndex] = useState(0);
-  const [phase, setPhase] = useState('intro'); // for listening chapters
+  const [phase, setPhase] = useState('intro');
   const [showResult, setShowResult] = useState(false);
 
   const [answers, setAnswers] = useState({});
@@ -33,7 +33,7 @@ export default function TestPage() {
   const [seenIntroMap, setSeenIntroMap] = useState({});
 
   const questionRefs = useRef({});
-  const playedMapRef = useRef({}); // track which piece audio was already played (by piece id)
+  const playedMapRef = useRef({}); // منع إعادة تشغيل الصوت
 
   useEffect(() => { initTest(); /* eslint-disable-next-line */ }, [id]);
 
@@ -97,6 +97,7 @@ export default function TestPage() {
             .order('idx', { ascending: true });
           if (rpErr) throw rpErr;
 
+          // تحويل passage إلى فقرات مرقّمة إن كانت موجودة بصيغة "1. ...\n\n2. ..."
           const normalizedPieces = (pieces || []).map(p => {
             const piece = { ...p };
             if (piece.passage && typeof piece.passage === 'string') {
@@ -123,7 +124,7 @@ export default function TestPage() {
         }
       }
 
-      // merge consecutive reading chapters so pieces become parts of same chapter
+      // دمج فصول القراءة المتتالية في فصل واحد
       function mergeConsecutiveReadingChapters(list) {
         if (!Array.isArray(list) || list.length === 0) return list;
         const out = [];
@@ -177,10 +178,8 @@ export default function TestPage() {
 
   function showIntroOnceForChapter(chapter) {
     if (!chapter) { setPhase('questions'); return; }
-    if (!seenIntroMap[chapter.id]) {
-      setSeenIntroMap(prev => ({ ...prev, [chapter.id]: true }));
-      setPhase('intro');
-    } else setPhase('questions');
+    if (!seenIntroMap[chapter.id]) { setSeenIntroMap(prev => ({ ...prev, [chapter.id]: true })); setPhase('intro'); }
+    else setPhase('questions');
   }
   useEffect(() => { const ch = chapters[currentChapterIndex]; showIntroOnceForChapter(ch); /* eslint-disable-next-line */ }, [currentChapterIndex, chapters]);
 
@@ -298,7 +297,6 @@ export default function TestPage() {
     if (completeErr) console.error('Error updating attempt completion time:', completeErr);
   };
 
-  // handleNext: special-case listening piece transitions (no alert when moving piece->piece because chapters merged)
   const handleNext = async () => {
     if (!currentChapter) return;
 
@@ -375,6 +373,11 @@ export default function TestPage() {
 
   function renderUnderlined(baseText, underlinedWords = null, underlinedPositions = null) {
     if (!baseText) return <span />;
+    // لا نعرض أي شيء تحت خط إلا إذا السؤال نفسه يحتوي تحديدًا كلمات/مواقع للتسطير
+    const hasUnderlines = (Array.isArray(underlinedWords) && underlinedWords.length > 0) ||
+                          (Array.isArray(underlinedPositions) && underlinedPositions.length > 0);
+    if (!hasUnderlines) return <span />;
+
     try {
       if (Array.isArray(underlinedPositions) && underlinedPositions.length > 0) {
         const nodes = []; let lastIndex = 0;
@@ -407,8 +410,8 @@ export default function TestPage() {
         }
         return <span>{nodes}</span>;
       }
-      return <span>{baseText}</span>;
-    } catch (e) { return <span>{baseText}</span>; }
+      return <span />;
+    } catch (e) { return <span />; }
   }
   function escapeRegExp(string) { return String(string).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
@@ -426,9 +429,7 @@ export default function TestPage() {
           <div className="bg-white p-4 rounded shadow"><div className="text-sm text-slate-500">القواعد</div><div className="text-xl font-bold">{scores.grammar} / 40</div></div>
           <div className="bg-white p-4 rounded shadow"><div className="text-sm text-slate-500">المجموع</div><div className="text-xl font-bold">{scores.total} / 100</div><div className="text-sm text-slate-500 mt-2">النسبة</div><div className="text-lg font-semibold">{scores.percentage}%</div></div>
         </div>
-
         {wrongAnswers.length > 0 && (<div className="mt-6"><h3 className="text-lg font-semibold mb-2">أسئلة أخطأت بها</h3><div className="bg-white rounded shadow p-4 border">{wrongAnswers.map((qid,i)=>(<div key={qid} className="py-2 border-b last:border-b-0">خطأ #{i+1} — معرف السؤال: {qid}</div>))}<div className="text-sm text-slate-500 mt-2">اضغط "راجع محاولتي" لمشاهدة تفاصيل الأخطاء</div></div></div>)}
-
         <div className="mt-6 flex gap-3"><Button onClick={() => router.push('/dashboard')} variant="outline">الرئيسية</Button><Button onClick={goToReview}>راجع محاولتي</Button></div>
       </div>
     );
@@ -446,7 +447,7 @@ export default function TestPage() {
       <main>
         {validationError && <div className="mb-4 p-3 rounded bg-yellow-50 text-yellow-700 border border-yellow-200">{validationError}</div>}
 
-        {/* Listening: left = piece (audio/transcript), right = questions */}
+        {/* Listening: يسار المقطع، يمين الأسئلة — بدون transcript وأي إضافات */}
         {currentChapter?.type === 'listening' && currentPiece && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white rounded-lg p-6 shadow-sm max-h-[70vh] overflow-y-auto text-left">
@@ -470,17 +471,7 @@ export default function TestPage() {
                   متصفحك لا يدعم عناصر الصوت.
                 </audio>
               </div>
-
-              {currentPiece.transcript && <div className="whitespace-pre-line text-slate-700 leading-relaxed">{currentPiece.transcript}</div>}
-
-              {currentPiece.listening_questions?.map((q, qi) => (
-                q.base_text ? (
-                  <div key={q.id} className="mt-4 p-3 border rounded bg-gray-50">
-                    <div className="text-sm text-slate-600 mb-2">الجملة المعروضة للسؤال {qi + 1}:</div>
-                    <div className="text-slate-800">{renderUnderlined(q.base_text, q.underlined_words, q.underlined_positions)}</div>
-                  </div>
-                ) : null
-              ))}
+              {/* لا transcript هنا — بناءً على طلبك */}
             </div>
 
             <div>
@@ -527,7 +518,7 @@ export default function TestPage() {
           </div>
         )}
 
-        {/* Reading: left = passage, right = questions */}
+        {/* Reading: القطعة يسار والأسئلة يمين — بدون أي نص إضافي إلا عند وجود underlines فعليًا في السؤال */}
         {currentChapter?.type === 'reading' && currentPiece && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white rounded-lg p-6 shadow-sm max-h-[70vh] overflow-y-auto text-left">
@@ -564,7 +555,11 @@ export default function TestPage() {
                     <button onClick={() => setActiveHintQuestion(q)} className="text-slate-500 hover:text-emerald-600 ml-4"><Lightbulb className="w-5 h-5" /></button>
                   </div>
 
-                  {q.base_text && <div className="mb-3 text-slate-700">{renderUnderlined(q.base_text, q.underlined_words, q.underlined_positions)}</div>}
+                  {/* فقط إذا السؤال يحتوي underlined_words أو underlined_positions نعرض base_text مع تسطير */}
+                  {((Array.isArray(q.underlined_words) && q.underlined_words.length > 0) ||
+                    (Array.isArray(q.underlined_positions) && q.underlined_positions.length > 0)) && q.base_text && (
+                    <div className="mb-3 text-slate-700">{renderUnderlined(q.base_text, q.underlined_words, q.underlined_positions)}</div>
+                  )}
 
                   <div className="space-y-2">
                     {q.options?.map((opt, oi) => (
@@ -603,7 +598,11 @@ export default function TestPage() {
                     <button onClick={() => setActiveHintQuestion(q)} className="text-slate-500 hover:text-slate-700 ml-4"><Lightbulb className="w-5 h-5" /></button>
                   </div>
 
-                  {q.base_text && <div className="mb-4 text-slate-700">{renderUnderlined(q.base_text, q.underlined_words, q.underlined_positions)}</div>}
+                  {/* نفس القاعدة: لا نعرض أي تسطير أو base_text إلا إذا السؤال فيه underlines */}
+                  {((Array.isArray(q.underlined_words) && q.underlined_words.length > 0) ||
+                    (Array.isArray(q.underlined_positions) && q.underlined_positions.length > 0)) && q.base_text && (
+                    <div className="mb-4 text-slate-700">{renderUnderlined(q.base_text, q.underlined_words, q.underlined_positions)}</div>
+                  )}
 
                   <p className="text-lg text-slate-900 mb-6 leading-relaxed">{q.question_text}</p>
 
