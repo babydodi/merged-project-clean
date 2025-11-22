@@ -2,14 +2,8 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-function ensureArray(x) {
-  return Array.isArray(x) ? x : [];
-}
-function pick(obj, keys) {
-  const out = {};
-  for (const k of keys) if (obj[k] !== undefined) out[k] = obj[k];
-  return out;
-}
+function ensureArray(x) { return Array.isArray(x) ? x : []; }
+function pick(obj, keys) { const out = {}; for (const k of keys) if (obj[k] !== undefined) out[k] = obj[k]; return out; }
 
 function normalizeListeningQuestion(q) {
   return {
@@ -61,6 +55,7 @@ function normalizeReadingPiece(piece) {
     idx: piece.idx ?? null,
     passage_title: piece.passage_title ?? piece.title ?? null,
     passage: piece.passage ?? piece.transcript ?? piece.text ?? null,
+    passage_paragraphs: Array.isArray(piece.passage_paragraphs) ? piece.passage_paragraphs : null,
     reading_questions: ensureArray(piece.reading_questions || piece.questions).map(normalizeReadingQuestion)
   };
 }
@@ -87,22 +82,19 @@ function getSupabaseClient() {
 
 async function ensureTestRow(supabase, testPayload) {
   if (!testPayload) return null;
-
   const testRow = {
     title: testPayload.title ?? 'اختبار بدون عنوان',
     description: testPayload.description ?? null,
     availability: testPayload.availability ?? 'all',
     is_published: testPayload.is_published ?? false
   };
-
   const { data, error } = await supabase
     .from('tests')
     .insert(testRow)
     .select('id')
     .single();
-
   if (error) throw error;
-  return data?.id;
+  return data?.id ?? null;
 }
 
 async function upsertChapterRow(supabase, test_id, ch) {
@@ -113,15 +105,13 @@ async function upsertChapterRow(supabase, test_id, ch) {
     title: ch.title,
     duration_seconds: ch.duration_seconds
   };
-
   const { data, error } = await supabase
     .from('chapters')
     .upsert(chapterRow, { onConflict: ['test_id', 'idx'] })
     .select('id')
     .single();
-
   if (error) throw error;
-  return data?.id;
+  return data?.id ?? null;
 }
 
 export async function POST(request) {
@@ -157,7 +147,7 @@ export async function POST(request) {
     const results = { chapters: [], errors: [] };
     if (createdTestId) results.testId = createdTestId;
 
-    // allowed columns per table
+    // allowed columns per table (match your DB schema)
     const LISTENING_PIECE_COLS = ['chapter_id', 'idx', 'audio_url', 'transcript'];
     const LISTENING_QUESTION_COLS = ['listening_piece_id', 'idx', 'question_text', 'options', 'answer', 'hint', 'explanation'];
     const READING_PIECE_COLS = ['chapter_id', 'idx', 'passage_title', 'passage'];
@@ -168,6 +158,7 @@ export async function POST(request) {
       try {
         const chapterId = await upsertChapterRow(supabase, test_id, ch);
 
+        // LISTENING
         if (ch.type === 'listening') {
           for (const p of ch.pieces || []) {
             const pieceRow = pick({ chapter_id: chapterId, ...p }, LISTENING_PIECE_COLS);
@@ -182,7 +173,7 @@ export async function POST(request) {
               .limit(1)
               .single();
             if (findPieceErr) throw findPieceErr;
-            const listening_piece_id = foundPiece?.id;
+            const listening_piece_id = foundPiece?.id ?? null;
 
             const questionRows = (p.listening_questions || []).map(q => {
               const normalized = normalizeListeningQuestion(q);
@@ -195,9 +186,28 @@ export async function POST(request) {
           }
         }
 
+        // READING (convert passage_paragraphs -> passage string before upsert)
         if (ch.type === 'reading') {
           for (const p of ch.pieces || []) {
-            const pieceRow = pick({ chapter_id: chapterId, ...p }, READING_PIECE_COLS);
+            const normalizedPiece = normalizeReadingPiece(p);
+
+            let passageValue = normalizedPiece.passage;
+            if (normalizedPiece.passage_paragraphs && Array.isArray(normalizedPiece.passage_paragraphs) && normalizedPiece.passage_paragraphs.length) {
+              passageValue = normalizedPiece.passage_paragraphs
+                .map((pp, idx) => {
+                  const num = pp.num ?? (idx + 1);
+                  return `${num}. ${pp.text}`;
+                })
+                .join('\n\n');
+            }
+
+            const pieceRow = pick({
+              chapter_id: chapterId,
+              idx: normalizedPiece.idx,
+              passage_title: normalizedPiece.passage_title,
+              passage: passageValue
+            }, READING_PIECE_COLS);
+
             const { error: pieceErr } = await supabase.from('reading_pieces').upsert(pieceRow, { onConflict: ['chapter_id', 'idx'] });
             if (pieceErr) throw pieceErr;
 
@@ -205,13 +215,13 @@ export async function POST(request) {
               .from('reading_pieces')
               .select('id')
               .eq('chapter_id', chapterId)
-              .eq('idx', p.idx)
+              .eq('idx', normalizedPiece.idx)
               .limit(1)
               .single();
             if (findPieceErr) throw findPieceErr;
-            const reading_piece_id = foundPiece?.id;
+            const reading_piece_id = foundPiece?.id ?? null;
 
-            const questionRows = (p.reading_questions || []).map(q => {
+            const questionRows = (normalizedPiece.reading_questions || []).map(q => {
               const normalized = normalizeReadingQuestion(q);
               return pick({ reading_piece_id, ...normalized }, READING_QUESTION_COLS);
             });
@@ -222,6 +232,7 @@ export async function POST(request) {
           }
         }
 
+        // GRAMMAR
         if (ch.type === 'grammar') {
           const questionRows = (ch.questions || []).map(q => {
             const normalized = normalizeGrammarQuestion(q);
@@ -235,6 +246,7 @@ export async function POST(request) {
 
         results.chapters.push({ type: ch.type, idx: ch.idx, chapterId });
       } catch (chError) {
+        console.error('Chapter processing error:', ch.idx ?? ch.title ?? null, chError);
         results.errors.push({
           chapter: ch.idx ?? ch.title ?? null,
           message: chError?.message ?? String(chError),
@@ -245,6 +257,7 @@ export async function POST(request) {
 
     return NextResponse.json({ ok: true, results }, { status: 200 });
   } catch (err) {
+    console.error('Upload error', err);
     return NextResponse.json({ error: err?.message ?? String(err), stack: err?.stack ?? null }, { status: 500 });
   }
 }
