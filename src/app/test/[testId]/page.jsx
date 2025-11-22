@@ -89,12 +89,13 @@ export default function TestPage() {
 
       for (const ch of chaptersData || []) {
         if (ch.type === 'listening') {
+          // NOTE: removed base_text and underlined_* from listening_questions select
           const { data: pieces, error: lpErr } = await supabase
             .from('listening_pieces')
             .select(
               `id, audio_url, transcript, idx,
               listening_questions (
-                id, question_text, options, answer, hint, explanation, idx, base_text, underlined_words, underlined_positions
+                id, question_text, options, answer, hint, explanation, idx
               )`
             )
             .eq('chapter_id', ch.id)
@@ -702,7 +703,7 @@ export default function TestPage() {
                       <button onClick={() => setActiveHintQuestion(q)} className="text-slate-500 hover:text-blue-600"><Lightbulb className="w-5 h-5" /></button>
                     </div>
 
-                    {/* render base_text with underlines if present */}
+                    {/* render base_text with underlines if present (listening questions might not include these fields) */}
                     {q.base_text && (
                       <div className="mb-3 text-slate-700">
                         {renderUnderlined(q.base_text, q.underlined_words, q.underlined_positions)}
