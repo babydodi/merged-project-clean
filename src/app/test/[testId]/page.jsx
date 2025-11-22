@@ -76,7 +76,7 @@ export default function TestPage() {
             .select(
               `id, audio_url, transcript, idx,
               listening_questions (
-                id, question_text, options, answer, hint, explanation, idx
+                id, question_text, options, answer, hint, explanation, idx, base_text, underlined_words, underlined_positions
               )`
             )
             .eq('chapter_id', ch.id)
@@ -96,11 +96,9 @@ export default function TestPage() {
             .order('idx', { ascending: true });
           if (rpErr) throw rpErr;
 
-          // parse passage into paragraphs (if passage contains "1. " markers we split)
           const normalizedPieces = (pieces || []).map(p => {
             const piece = { ...p };
             if (piece.passage && typeof piece.passage === 'string') {
-              // try to split on double newlines and detect "N. " prefix
               const parts = piece.passage.split(/\n{2,}/).map(str => str.trim()).filter(Boolean);
               const paragraphs = parts.map(pt => {
                 const m = pt.match(/^\s*(\d+)\.\s*(.*)$/s);
@@ -159,10 +157,8 @@ export default function TestPage() {
 
   function showIntroOnceForChapter(chapter) {
     if (!chapter) { setPhase('questions'); return; }
-    if (!seenIntroMap[chapter.id]) {
-      setSeenIntroMap(prev => ({ ...prev, [chapter.id]: true }));
-      setPhase('intro');
-    } else setPhase('questions');
+    if (!seenIntroMap[chapter.id]) { setSeenIntroMap(prev => ({ ...prev, [chapter.id]: true })); setPhase('intro'); }
+    else setPhase('questions');
   }
   useEffect(() => { const ch = chapters[currentChapterIndex]; showIntroOnceForChapter(ch); /* eslint-disable-next-line */ }, [currentChapterIndex, chapters]);
 
@@ -203,58 +199,6 @@ export default function TestPage() {
 
   const goToQuestionInCurrent = (questionId) => { const el = document.getElementById(`q-${questionId}`); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
 
-  const handleNext = async () => {
-    if (!currentChapter) return;
-    if (currentChapter.type === 'listening') {
-      if (phase === 'intro') { setPhase('questions'); return; }
-      await savePieceAnswers('listening');
-    } else if (currentChapter.type === 'reading') {
-      await savePieceAnswers('reading');
-    } else if (currentChapter.type === 'grammar') {
-      await savePieceAnswers('grammar');
-    }
-    setValidationError('');
-
-    if (currentChapter.type === 'listening') {
-      const last = currentChapter.pieces.length - 1;
-      if (currentPieceIndex < last) { setCurrentPieceIndex(i => i + 1); setPhase('questions'); return; }
-      else {
-        const unansweredInChapter = getUnansweredInChapter(currentChapter);
-        if (unansweredInChapter.length > 0) {
-          const ok = window.confirm(`فيه ${unansweredInChapter.length} سؤال ما جاوبت عليهم في هذا الفصل. تبي تتابع وتروح للفصل التالي؟`);
-          if (!ok) { goToQuestionInCurrent(unansweredInChapter[0]); return; }
-        }
-        setCurrentChapterIndex(ci => ci + 1); setCurrentPieceIndex(0); return;
-      }
-    }
-
-    if (currentChapter.type === 'reading') {
-      const last = currentChapter.pieces.length - 1;
-      if (currentPieceIndex < last) { setCurrentPieceIndex(i => i + 1); return; }
-      else {
-        const unansweredInChapter = getUnansweredInChapter(currentChapter);
-        if (unansweredInChapter.length > 0) {
-          const ok = window.confirm(`فيه ${unansweredInChapter.length} سؤال ما جاوبت عليهم في هذا الفصل. تبي تتابع وتروح للفصل التالي؟`);
-          if (!ok) { goToQuestionInCurrent(unansweredInChapter[0]); return; }
-        }
-        setCurrentChapterIndex(ci => ci + 1); setCurrentPieceIndex(0); return;
-      }
-    }
-
-    if (currentChapter.type === 'grammar') {
-      const last = currentChapter.questions.length - 1;
-      if (currentPieceIndex < last) { setCurrentPieceIndex(i => i + 1); return; }
-      else {
-        const unansweredInChapter = getUnansweredInChapter(currentChapter);
-        if (unansweredInChapter.length > 0) {
-          const ok = window.confirm(`فيه ${unansweredInChapter.length} سؤال ما جاوبت عليهم في هذا الفصل. تبي تتابع وتنهي الانتقال؟`);
-          if (!ok) { goToQuestionInCurrent(unansweredInChapter[0]); return; }
-        }
-        await finalizeScoresAndWrongs(); setShowResult(true); return;
-      }
-    }
-  };
-
   const getUnansweredInChapter = (chapter) => {
     const qIds = [];
     if (!chapter) return qIds;
@@ -266,6 +210,136 @@ export default function TestPage() {
       for (const q of (chapter.questions || [])) if (!answeredMap[q.id]) qIds.push(q.id);
     }
     return qIds;
+  };
+
+  const finalizeScoresAndWrongs = async () => {
+    if (!attemptId) return;
+    const { data: attemptsRows = [], error: attemptsErr } = await supabase
+      .from('question_attempts')
+      .select('question_id, question_type, selected_choice, is_correct')
+      .eq('attempt_id', attemptId);
+    if (attemptsErr) { console.error('fetch question_attempts error', attemptsErr); return; }
+
+    const stats = { listening: { total: 0, correct: 0 }, reading: { total: 0, correct: 0 }, grammar: { total: 0, correct: 0, vocab_total: 0, vocab_correct: 0 } };
+
+    const grammarQuestionIds = attemptsRows.filter(r => r.question_type === 'grammar').map(r => r.question_id);
+    let grammarMeta = {};
+    if (grammarQuestionIds.length) {
+      const { data: gQs = [], error: gErr } = await supabase.from('grammar_questions').select('id, category, answer').in('id', grammarQuestionIds);
+      if (gErr) console.error('fetch grammar metadata error', gErr);
+      (gQs || []).forEach(q => { grammarMeta[q.id] = q; });
+    }
+
+    for (const r of attemptsRows) {
+      if (r.question_type === 'listening') { stats.listening.total += 1; if (r.is_correct) stats.listening.correct += 1; }
+      else if (r.question_type === 'reading') { stats.reading.total += 1; if (r.is_correct) stats.reading.correct += 1; }
+      else if (r.question_type === 'grammar') {
+        stats.grammar.total += 1; if (r.is_correct) stats.grammar.correct += 1;
+        const meta = grammarMeta[r.question_id];
+        const isVocab = meta ? (String(meta.category).toLowerCase() === 'vocab' || String(meta.category).toLowerCase() === 'vocabulary') : false;
+        if (isVocab) { stats.grammar.vocab_total += 1; if (r.is_correct) stats.grammar.vocab_correct += 1; }
+      }
+    }
+
+    const weights = { listening: 20, reading: 40, grammar: 40 };
+    const grammarVocabWeight = weights.grammar * 0.10;
+    const grammarNonVocabWeight = weights.grammar - grammarVocabWeight;
+    const pct = (correct, total) => (total ? (correct / total) : 0);
+
+    const listeningScore = Math.round(pct(stats.listening.correct, stats.listening.total) * weights.listening);
+    const readingScore = Math.round(pct(stats.reading.correct, stats.reading.total) * weights.reading);
+
+    const vocabScore = Math.round(pct(stats.grammar.vocab_correct, stats.grammar.vocab_total) * grammarVocabWeight);
+    const nonVocabTotal = stats.grammar.total - stats.grammar.vocab_total;
+    const nonVocabCorrect = stats.grammar.correct - stats.grammar.vocab_correct;
+    const nonVocabScore = Math.round(pct(nonVocabCorrect, nonVocabTotal) * grammarNonVocabWeight);
+    const grammarScore = vocabScore + nonVocabScore;
+
+    const totalScore = listeningScore + readingScore + grammarScore;
+    const totalQuestions = stats.listening.total + stats.reading.total + stats.grammar.total;
+    const totalCorrect = stats.listening.correct + stats.reading.correct + stats.grammar.correct;
+    const percentage = totalQuestions ? Math.round((totalCorrect / totalQuestions) * 100 * 100) / 100 : 0;
+
+    setScores({ listening: listeningScore, reading: readingScore, grammar: grammarScore, total: totalScore, percentage });
+
+    const wrongRows = attemptsRows.filter(r => !r.is_correct);
+    const wrongQuestionIds = wrongRows.map(r => r.question_id);
+    setWrongAnswers(wrongQuestionIds);
+
+    const { data: existing = [], error: exErr } = await supabase.from('user_results').select('id').eq('attempt_id', attemptId).limit(1);
+    if (exErr) console.error('check existing user_results', exErr);
+    if (!existing || existing.length === 0) {
+      const { error: resultErr } = await supabase.from('user_results').insert({ attempt_id: attemptId, score: totalScore, total_questions: totalQuestions, percentage });
+      if (resultErr) console.error('Error saving user result:', resultErr);
+    }
+    const { error: completeErr } = await supabase.from('test_attempts').update({ completed_at: new Date().toISOString() }).eq('id', attemptId);
+    if (completeErr) console.error('Error updating attempt completion time:', completeErr);
+  };
+
+  // handleNext: special-case listening piece transitions (no alert when moving piece->piece)
+  const handleNext = async () => {
+    if (!currentChapter) return;
+
+    if (currentChapter.type === 'listening') {
+      if (phase === 'intro') { setPhase('questions'); return; }
+      await savePieceAnswers('listening');
+
+      const last = currentChapter.pieces.length - 1;
+      // if not last piece, just advance to next piece silently
+      if (currentPieceIndex < last) {
+        setCurrentPieceIndex(i => i + 1);
+        setPhase('questions');
+        return;
+      }
+
+      // if last piece in this listening chapter, now check unanswered across chapter before moving to next chapter
+      const unansweredInChapter = getUnansweredInChapter(currentChapter);
+      if (unansweredInChapter.length > 0) {
+        const ok = window.confirm(`فيه ${unansweredInChapter.length} سؤال ما جاوبت عليهم في هذا الفصل. تبي تتابع وتروح للفصل التالي؟`);
+        if (!ok) { goToQuestionInCurrent(unansweredInChapter[0]); return; }
+      }
+
+      // move to next chapter (intro logic handled by effect)
+      setCurrentChapterIndex(ci => ci + 1);
+      setCurrentPieceIndex(0);
+      return;
+    }
+
+    // reading flow unchanged: move piece->piece with checks only at end of chapter
+    if (currentChapter.type === 'reading') {
+      await savePieceAnswers('reading');
+      const last = currentChapter.pieces.length - 1;
+      if (currentPieceIndex < last) {
+        setCurrentPieceIndex(i => i + 1);
+        return;
+      } else {
+        const unansweredInChapter = getUnansweredInChapter(currentChapter);
+        if (unansweredInChapter.length > 0) {
+          const ok = window.confirm(`فيه ${unansweredInChapter.length} سؤال ما جاوبت عليهم في هذا الفصل. تبي تتابع وتروح للفصل التالي؟`);
+          if (!ok) { goToQuestionInCurrent(unansweredInChapter[0]); return; }
+        }
+        setCurrentChapterIndex(ci => ci + 1);
+        setCurrentPieceIndex(0);
+        return;
+      }
+    }
+
+    // grammar flow unchanged
+    if (currentChapter.type === 'grammar') {
+      await savePieceAnswers('grammar');
+      const last = currentChapter.questions.length - 1;
+      if (currentPieceIndex < last) { setCurrentPieceIndex(i => i + 1); return; }
+      else {
+        const unansweredInChapter = getUnansweredInChapter(currentChapter);
+        if (unansweredInChapter.length > 0) {
+          const ok = window.confirm(`فيه ${unansweredInChapter.length} سؤال ما جاوبت عليهم في هذا الفصل. تبي تتابع وتنهي الانتقال؟`);
+          if (!ok) { goToQuestionInCurrent(unansweredInChapter[0]); return; }
+        }
+        await finalizeScoresAndWrongs();
+        setShowResult(true);
+        return;
+      }
+    }
   };
 
   const handlePrev = async () => {
@@ -284,7 +358,6 @@ export default function TestPage() {
   const [showMarkedPanel, setShowMarkedPanel] = useState(false);
   const markedList = useMemo(() => Object.keys(markedMap), [markedMap]);
 
-  // underlined renderer & parsing helper
   function renderUnderlined(baseText, underlinedWords = null, underlinedPositions = null) {
     if (!baseText) return <span />;
     try {
@@ -338,9 +411,7 @@ export default function TestPage() {
           <div className="bg-white p-4 rounded shadow"><div className="text-sm text-slate-500">القواعد</div><div className="text-xl font-bold">{scores.grammar} / 40</div></div>
           <div className="bg-white p-4 rounded shadow"><div className="text-sm text-slate-500">المجموع</div><div className="text-xl font-bold">{scores.total} / 100</div><div className="text-sm text-slate-500 mt-2">النسبة</div><div className="text-lg font-semibold">{scores.percentage}%</div></div>
         </div>
-
         {wrongAnswers.length > 0 && (<div className="mt-6"><h3 className="text-lg font-semibold mb-2">أسئلة أخطأت بها</h3><div className="bg-white rounded shadow p-4 border">{wrongAnswers.map((qid,i)=>(<div key={qid} className="py-2 border-b last:border-b-0">خطأ #{i+1} — معرف السؤال: {qid}</div>))}<div className="text-sm text-slate-500 mt-2">اضغط "راجع محاولتي" لمشاهدة تفاصيل الأخطاء</div></div></div>)}
-
         <div className="mt-6 flex gap-3"><Button onClick={() => router.push('/dashboard')} variant="outline">الرئيسية</Button><Button onClick={goToReview}>راجع محاولتي</Button></div>
       </div>
     );
@@ -358,46 +429,81 @@ export default function TestPage() {
       <main>
         {validationError && <div className="mb-4 p-3 rounded bg-yellow-50 text-yellow-700 border border-yellow-200">{validationError}</div>}
 
-        {/* Listening */}
-        {currentChapter?.type === 'listening' && (
-          <div>
-            {phase === 'intro' && (<div className="max-w-3xl mx-auto mb-6"><div className="bg-white rounded-lg p-8 text-center shadow-sm"><Volume2 className="w-16 h-16 text-blue-600 mx-auto mb-4" /><h2 className="text-2xl font-semibold mb-2">قسم الاستماع</h2><p className="text-slate-600 mb-4">اضغط ابدأ للاستماع ثم الإجابة عن أسئلة المقطع.</p><div className="flex justify-center gap-3"><Button onClick={() => setPhase('questions')} className="bg-blue-600 text-white">ابدأ</Button><Button onClick={() => setPhase('questions')} variant="outline">تخطي</Button></div></div></div>)}
-
-            {phase === 'questions' && currentPiece && (
-              <div className="max-w-4xl mx-auto space-y-6">
-                <div className="bg-white rounded-lg p-6 shadow-sm"><audio controls className="w-full" preload="none"><source src={currentPiece.audio_url} type="audio/mpeg" />متصفحك لا يدعم عناصر الصوت.</audio></div>
-
-                <div className="flex flex-wrap gap-2">{currentPiece.listening_questions.map((q, qi) => { const answered = !!answeredMap[q.id]; const marked = !!markedMap[q.id]; const cls = answered ? 'bg-green-600 text-white' : 'bg-slate-200 text-slate-700'; return (<button key={q.id} onClick={() => goToQuestionInCurrent(q.id)} className={`px-2 py-1 rounded ${cls}`}>{qi + 1}{marked && <span className="ml-2 text-xs">★</span>}</button>); })}</div>
-
-                {currentPiece.listening_questions.map((q, i) => (
-                  <div key={q.id} id={`q-${q.id}`} className="bg-white rounded-lg p-6 shadow-sm">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        <p className="text-lg font-medium"><span className="text-blue-600 mr-2 font-semibold">{i + 1}.</span>{q.question_text}</p>
-                        <button type="button" onClick={() => toggleMark(q.id)} title="علامة للرجوع" className="text-yellow-600 ml-3"><Tag className={`w-4 h-4 ${markedMap[q.id] ? 'text-yellow-600' : 'text-slate-300'}`} /></button>
-                      </div>
-                      <button onClick={() => setActiveHintQuestion(q)} className="text-slate-500 hover:text-blue-600"><Lightbulb className="w-5 h-5" /></button>
-                    </div>
-
-                    {q.base_text && (<div className="mb-3 text-slate-700">{renderUnderlined(q.base_text, q.underlined_words, q.underlined_positions)}</div>)}
-
-                    <div className="space-y-2">{q.options?.map((opt, oi) => (<label key={oi} className={`flex items-center p-4 border-2 rounded-md cursor-pointer ${answers[q.id] === opt ? 'border-blue-600' : 'border-slate-200'}`}><input type="radio" name={`q-${q.id}`} value={opt} onChange={() => handleSelect(q.id, opt)} checked={answers[q.id] === opt} className="w-4 h-4 text-blue-600 mr-3" /><span className="font-medium mr-2">{String.fromCharCode(65 + oi)}.</span><span>{opt}</span></label>))}</div>
-                  </div>
-                ))}
-
-                <div className="flex justify-between mt-4"><Button onClick={handlePrev} variant="outline"><ArrowLeft className="w-4 h-4 ml-2" /> السابق</Button><Button onClick={handleNext} className="bg-blue-600 text-white">التالي <ChevronRight className="w-4 h-4 ml-2" /></Button></div>
+        {/* Listening: left = piece (audio/text), right = questions */}
+        {currentChapter?.type === 'listening' && currentPiece && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* LEFT: full piece content */}
+            <div className="bg-white rounded-lg p-6 shadow-sm max-h-[70vh] overflow-y-auto text-left">
+              <div className="mb-4">
+                <audio controls className="w-full" preload="none">
+                  <source src={currentPiece.audio_url} type="audio/mpeg" />
+                  متصفحك لا يدعم عناصر الصوت.
+                </audio>
               </div>
-            )}
+
+              {currentPiece.transcript && <div className="whitespace-pre-line text-slate-700 leading-relaxed">{currentPiece.transcript}</div>}
+
+              {/* If questions include base_text with underlines, show examples beneath piece */}
+              {currentPiece.listening_questions?.map((q, qi) => (
+                q.base_text ? (
+                  <div key={q.id} className="mt-4 p-3 border rounded bg-gray-50">
+                    <div className="text-sm text-slate-600 mb-2">الجملة المعروضة للسؤال {qi + 1}:</div>
+                    <div className="text-slate-800">{renderUnderlined(q.base_text, q.underlined_words, q.underlined_positions)}</div>
+                  </div>
+                ) : null
+              ))}
+            </div>
+
+            {/* RIGHT: questions */}
+            <div>
+              <div className="flex flex-wrap gap-2 mb-4 justify-end">
+                {currentPiece.listening_questions.map((q, qi) => {
+                  const answered = !!answeredMap[q.id];
+                  const marked = !!markedMap[q.id];
+                  const cls = answered ? 'bg-green-600 text-white' : 'bg-slate-200 text-slate-700';
+                  return (
+                    <button key={q.id} onClick={() => goToQuestionInCurrent(q.id)} className={`px-2 py-1 rounded ${cls}`}>
+                      {qi + 1}{marked && <span className="ml-2 text-xs">★</span>}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {currentPiece.listening_questions.map((q, i) => (
+                <div key={q.id} id={`q-${q.id}`} className="bg-white rounded-lg p-6 shadow-sm mb-3">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <p className="text-lg font-medium"><span className="text-blue-600 mr-2 font-semibold">{i + 1}.</span>{q.question_text}</p>
+                      <button type="button" onClick={() => toggleMark(q.id)} title="علامة للرجوع" className="text-yellow-600 ml-3"><Tag className={`w-4 h-4 ${markedMap[q.id] ? 'text-yellow-600' : 'text-slate-300'}`} /></button>
+                    </div>
+                    <button onClick={() => setActiveHintQuestion(q)} className="text-slate-500 hover:text-blue-600"><Lightbulb className="w-5 h-5" /></button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {q.options?.map((opt, oi) => (
+                      <label key={oi} className={`flex items-center p-4 border-2 rounded-md cursor-pointer ${answers[q.id] === opt ? 'border-blue-600' : 'border-slate-200'}`}>
+                        <input type="radio" name={`q-${q.id}`} value={opt} onChange={() => handleSelect(q.id, opt)} checked={answers[q.id] === opt} className="w-4 h-4 text-blue-600 mr-3" />
+                        <span className="font-medium mr-2">{String.fromCharCode(65 + oi)}.</span>
+                        <span>{opt}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              <div className="flex justify-between mt-4">
+                <Button onClick={handlePrev} variant="outline"><ArrowLeft className="w-4 h-4 ml-2" /> السابق</Button>
+                <Button onClick={handleNext} className="bg-blue-600 text-white">التالي <ChevronRight className="w-4 h-4 ml-2" /></Button>
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Reading (LEFT passage, RIGHT questions) */}
+        {/* Reading */}
         {currentChapter?.type === 'reading' && currentPiece && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white rounded-lg p-6 shadow-sm max-h-[70vh] overflow-y-auto text-left">
               <h3 className="text-xl font-bold mb-4">{currentPiece.passage_title}</h3>
-
-              {/* if passage_paragraphs exists show numbered paragraphs (num bold) else show passage text */}
               {Array.isArray(currentPiece.passage_paragraphs) ? (
                 currentPiece.passage_paragraphs.map((para, pi) => (
                   <p key={pi} className="mb-4 leading-relaxed text-slate-700">
@@ -416,11 +522,7 @@ export default function TestPage() {
                   const answered = !!answeredMap[q.id];
                   const marked = !!markedMap[q.id];
                   const cls = answered ? 'bg-green-600 text-white' : 'bg-slate-200 text-slate-700';
-                  return (
-                    <button key={q.id} onClick={() => goToQuestionInCurrent(q.id)} className={`px-2 py-1 rounded ${cls}`}>
-                      {idx + 1}{marked && <span className="ml-2 text-xs">★</span>}
-                    </button>
-                  );
+                  return (<button key={q.id} onClick={() => goToQuestionInCurrent(q.id)} className={`px-2 py-1 rounded ${cls}`}>{idx + 1}{marked && <span className="ml-2 text-xs">★</span>}</button>);
                 })}
               </div>
 
@@ -429,9 +531,7 @@ export default function TestPage() {
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3">
                       <p className="text-lg font-medium"><span className="text-emerald-600 mr-2 font-semibold">{qi + 1}.</span>{q.question_text}</p>
-                      <button type="button" onClick={() => toggleMark(q.id)} title="علامة للرجوع" className="text-yellow-600 ml-3">
-                        <Tag className={`w-4 h-4 ${markedMap[q.id] ? 'text-yellow-600' : 'text-slate-300'}`} />
-                      </button>
+                      <button type="button" onClick={() => toggleMark(q.id)} title="علامة للرجوع" className="text-yellow-600 ml-3"><Tag className={`w-4 h-4 ${markedMap[q.id] ? 'text-yellow-600' : 'text-slate-300'}`} /></button>
                     </div>
                     <button onClick={() => setActiveHintQuestion(q)} className="text-slate-500 hover:text-emerald-600 ml-4"><Lightbulb className="w-5 h-5" /></button>
                   </div>
@@ -470,9 +570,7 @@ export default function TestPage() {
                   <div className="flex items-start justify-between mb-6">
                     <div className="flex items-center gap-3">
                       <p className="text-xl font-medium"><span className="text-slate-600 font-semibold mr-2">سؤال {currentPieceIndex + 1} من {currentChapter.questions.length}</span></p>
-                      <button type="button" onClick={() => toggleMark(q.id)} className="text-yellow-600 ml-3" title="علامة للرجوع">
-                        <Tag className={`w-4 h-4 ${marked ? 'text-yellow-600' : 'text-slate-300'}`} />
-                      </button>
+                      <button type="button" onClick={() => toggleMark(q.id)} className="text-yellow-600 ml-3" title="علامة للرجوع"><Tag className={`w-4 h-4 ${marked ? 'text-yellow-600' : 'text-slate-300'}`} /></button>
                     </div>
                     <button onClick={() => setActiveHintQuestion(q)} className="text-slate-500 hover:text-slate-700 ml-4"><Lightbulb className="w-5 h-5" /></button>
                   </div>
