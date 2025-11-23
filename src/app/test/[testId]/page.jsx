@@ -44,6 +44,7 @@ export default function TestPage() {
 
       const { data: userData } = await supabase.auth.getUser();
       const currentUser = userData?.user || null;
+
       const payload = currentUser ? { test_id: id, user_id: currentUser.id } : { test_id: id };
 
       const { data: attempt, error: attemptErr } = await supabase
@@ -51,6 +52,7 @@ export default function TestPage() {
         .insert(payload)
         .select()
         .single();
+
       if (attemptErr) throw attemptErr;
       setAttemptId(attempt.id);
 
@@ -76,9 +78,9 @@ export default function TestPage() {
             .from('listening_pieces')
             .select(
               `id, audio_url, transcript, idx,
-               listening_questions (
-                 id, question_text, options, answer, hint, explanation, idx
-               )`
+              listening_questions (
+                id, question_text, options, answer, hint, explanation, idx
+              )`
             )
             .eq('chapter_id', ch.id)
             .order('idx', { ascending: true });
@@ -89,15 +91,14 @@ export default function TestPage() {
             .from('reading_pieces')
             .select(
               `id, passage_title, passage, idx,
-               reading_questions (
-                 id, question_text, options, answer, hint, explanation, idx, base_text, underlined_words, underlined_positions
-               )`
+              reading_questions (
+                id, question_text, options, answer, hint, explanation, idx, base_text, underlined_words, underlined_positions
+              )`
             )
             .eq('chapter_id', ch.id)
             .order('idx', { ascending: true });
           if (rpErr) throw rpErr;
 
-          // تحويل passage إلى فقرات مرقّمة إن كانت موجودة بصيغة "1. ...\n\n2. ..."
           const normalizedPieces = (pieces || []).map(p => {
             const piece = { ...p };
             if (piece.passage && typeof piece.passage === 'string') {
@@ -124,7 +125,7 @@ export default function TestPage() {
         }
       }
 
-      // دمج فصول القراءة المتتالية في فصل واحد
+      // دمج فصول القراءة المتتالية
       function mergeConsecutiveReadingChapters(list) {
         if (!Array.isArray(list) || list.length === 0) return list;
         const out = [];
@@ -178,8 +179,10 @@ export default function TestPage() {
 
   function showIntroOnceForChapter(chapter) {
     if (!chapter) { setPhase('questions'); return; }
-    if (!seenIntroMap[chapter.id]) { setSeenIntroMap(prev => ({ ...prev, [chapter.id]: true })); setPhase('intro'); }
-    else setPhase('questions');
+    if (!seenIntroMap[chapter.id]) {
+      setSeenIntroMap(prev => ({ ...prev, [chapter.id]: true }));
+      setPhase('intro');
+    } else setPhase('questions');
   }
   useEffect(() => { const ch = chapters[currentChapterIndex]; showIntroOnceForChapter(ch); /* eslint-disable-next-line */ }, [currentChapterIndex, chapters]);
 
@@ -188,10 +191,8 @@ export default function TestPage() {
     let qList = [];
     if (chapterType === 'listening') qList = currentChapter?.pieces?.[currentPieceIndex]?.listening_questions || [];
     else if (chapterType === 'reading') qList = currentChapter?.pieces?.[currentPieceIndex]?.reading_questions || [];
-    else if (chapterType === 'grammar') {
-      const q = currentChapter?.questions?.[currentPieceIndex];
-      if (q) qList = [q];
-    }
+    else if (chapterType === 'grammar') { const q = currentChapter?.questions?.[currentPieceIndex]; if (q) qList = [q]; }
+
     const rows = [];
     for (const q of qList) {
       if (answers[q.id] !== undefined) {
@@ -269,20 +270,17 @@ export default function TestPage() {
 
     const listeningScore = Math.round(pct(stats.listening.correct, stats.listening.total) * weights.listening);
     const readingScore = Math.round(pct(stats.reading.correct, stats.reading.total) * weights.reading);
-
     const vocabScore = Math.round(pct(stats.grammar.vocab_correct, stats.grammar.vocab_total) * grammarVocabWeight);
     const nonVocabTotal = stats.grammar.total - stats.grammar.vocab_total;
     const nonVocabCorrect = stats.grammar.correct - stats.grammar.vocab_correct;
     const nonVocabScore = Math.round(pct(nonVocabCorrect, nonVocabTotal) * grammarNonVocabWeight);
     const grammarScore = vocabScore + nonVocabScore;
-
     const totalScore = listeningScore + readingScore + grammarScore;
     const totalQuestions = stats.listening.total + stats.reading.total + stats.grammar.total;
     const totalCorrect = stats.listening.correct + stats.reading.correct + stats.grammar.correct;
     const percentage = totalQuestions ? Math.round((totalCorrect / totalQuestions) * 100 * 100) / 100 : 0;
 
     setScores({ listening: listeningScore, reading: readingScore, grammar: grammarScore, total: totalScore, percentage });
-
     const wrongRows = attemptsRows.filter(r => !r.is_correct);
     const wrongQuestionIds = wrongRows.map(r => r.question_id);
     setWrongAnswers(wrongQuestionIds);
@@ -293,6 +291,7 @@ export default function TestPage() {
       const { error: resultErr } = await supabase.from('user_results').insert({ attempt_id: attemptId, score: totalScore, total_questions: totalQuestions, percentage });
       if (resultErr) console.error('Error saving user result:', resultErr);
     }
+
     const { error: completeErr } = await supabase.from('test_attempts').update({ completed_at: new Date().toISOString() }).eq('id', attemptId);
     if (completeErr) console.error('Error updating attempt completion time:', completeErr);
   };
@@ -302,6 +301,7 @@ export default function TestPage() {
 
     if (currentChapter.type === 'listening') {
       if (phase === 'intro') { setPhase('questions'); return; }
+
       await savePieceAnswers('listening');
 
       const last = currentChapter.pieces.length - 1;
@@ -361,8 +361,13 @@ export default function TestPage() {
       if (phase === 'questions' && currentPieceIndex === 0) { setPhase('intro'); return; }
       if (phase === 'questions') await savePieceAnswers('listening');
       if (currentPieceIndex > 0) setCurrentPieceIndex(i => i - 1);
-    } else if (currentChapter.type === 'reading') { await savePieceAnswers('reading'); if (currentPieceIndex > 0) setCurrentPieceIndex(i => i - 1); }
-    else if (currentChapter.type === 'grammar') { await savePieceAnswers('grammar'); if (currentPieceIndex > 0) setCurrentPieceIndex(i => i - 1); }
+    } else if (currentChapter.type === 'reading') {
+      await savePieceAnswers('reading');
+      if (currentPieceIndex > 0) setCurrentPieceIndex(i => i - 1);
+    } else if (currentChapter.type === 'grammar') {
+      await savePieceAnswers('grammar');
+      if (currentPieceIndex > 0) setCurrentPieceIndex(i => i - 1);
+    }
     setValidationError('');
   };
 
@@ -371,13 +376,36 @@ export default function TestPage() {
   const [showMarkedPanel, setShowMarkedPanel] = useState(false);
   const markedList = useMemo(() => Object.keys(markedMap), [markedMap]);
 
-  function renderUnderlined(baseText, underlinedWords = null, underlinedPositions = null) {
-    if (!baseText) return <span />;
-    // لا نعرض أي شيء تحت خط إلا إذا السؤال نفسه يحتوي تحديدًا كلمات/مواقع للتسطير
-    const hasUnderlines = (Array.isArray(underlinedWords) && underlinedWords.length > 0) ||
-                          (Array.isArray(underlinedPositions) && underlinedPositions.length > 0);
-    if (!hasUnderlines) return <span />;
+  // -------------- New helpers for underline resolution --------------
+  function findSentenceContaining(text, needle) {
+    if (!text || !needle) return null;
+    const sentences = String(text).split(/(?<=[.!?])\s+/);
+    const idx = sentences.findIndex(s => s.toLowerCase().includes(String(needle).toLowerCase()));
+    return idx >= 0 ? sentences[idx] : null;
+  }
+  function resolveBaseTextForQuestion(q, piece) {
+    if (q?.base_text) return q.base_text;
+    let sourceText = '';
+    if (piece?.passage_paragraphs && Array.isArray(piece.passage_paragraphs) && piece.passage_paragraphs.length) {
+      sourceText = piece.passage_paragraphs.map(p => p.text).join(' ');
+    } else if (piece?.passage) sourceText = piece.passage;
+    if (Array.isArray(q?.underlined_words) && q.underlined_words.length > 0) {
+      const target = q.underlined_words.find(Boolean);
+      const sentence = findSentenceContaining(sourceText, target);
+      if (sentence) return sentence;
+      return sourceText || null;
+    }
+    if (Array.isArray(q?.underlined_positions) && q.underlined_positions.length > 0) {
+      return sourceText || null;
+    }
+    return null;
+  }
+  // ----------------------------------------------------------------
 
+  function renderUnderlined(baseText, underlinedWords = null, underlinedPositions = null) {
+    if (!baseText) return null;
+    const hasUnderlines = (Array.isArray(underlinedWords) && underlinedWords.length > 0) || (Array.isArray(underlinedPositions) && underlinedPositions.length > 0);
+    if (!hasUnderlines) return null;
     try {
       if (Array.isArray(underlinedPositions) && underlinedPositions.length > 0) {
         const nodes = []; let lastIndex = 0;
@@ -415,30 +443,63 @@ export default function TestPage() {
   }
   function escapeRegExp(string) { return String(string).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
-  if (loading) return (<div className="p-6 text-center">جاري تحميل الاختبار...</div>);
-  if (!currentChapter && !showResult) return (<div className="p-6">لا توجد فصول متاحة لهذا الاختبار.<Button onClick={() => router.push('/dashboard')} variant="outline" className="mt-4">الرجوع للاختبارات</Button></div>);
+  // -------------- Audio reload effect --------------
+  useEffect(() => {
+    const el = questionRefs.current[`audio-${currentPiece?.id}`];
+    if (!el) return;
+    try {
+      el.load();
+      // only attempt to play; may be blocked if not a user gesture
+      el.play().catch(() => {});
+    } catch (e) {
+      console.warn('audio load/play error', e);
+    }
+    // reset play-block flag for new piece so user can play it
+    if (currentPiece?.id) playedMapRef.current[currentPiece.id] = false;
+  }, [currentPiece?.id, currentPiece?.audio_url]);
+  // ---------------------------------------------------
+
+  if (loading) return (
+    <div>جاري تحميل الاختبار...</div>
+  );
+  if (!currentChapter && !showResult) return (
+    <div>
+      لا توجد فصول متاحة لهذا الاختبار.
+      <Button onClick={() => router.push('/dashboard')} variant="outline" className="mt-4">الرجوع للاختبارات</Button>
+    </div>
+  );
 
   if (showResult) {
     return (
-      <div className="max-w-4xl mx-auto p-6">
-        <h1 className="text-2xl font-bold mb-4"> {test?.title} </h1>
-        <h2 className="text-lg font-semibold mt-4">النتيجة النهائية</h2>
-        <div className="grid grid-cols-2 gap-4 mt-4">
-          <div className="bg-white p-4 rounded shadow"><div className="text-sm text-slate-500">الاستماع</div><div className="text-xl font-bold">{scores.listening} / 20</div></div>
-          <div className="bg-white p-4 rounded shadow"><div className="text-sm text-slate-500">القراءة</div><div className="text-xl font-bold">{scores.reading} / 40</div></div>
-          <div className="bg-white p-4 rounded shadow"><div className="text-sm text-slate-500">القواعد</div><div className="text-xl font-bold">{scores.grammar} / 40</div></div>
-          <div className="bg-white p-4 rounded shadow"><div className="text-sm text-slate-500">المجموع</div><div className="text-xl font-bold">{scores.total} / 100</div><div className="text-sm text-slate-500 mt-2">النسبة</div><div className="text-lg font-semibold">{scores.percentage}%</div></div>
-        </div>
-        {wrongAnswers.length > 0 && (<div className="mt-6"><h3 className="text-lg font-semibold mb-2">أسئلة أخطأت بها</h3><div className="bg-white rounded shadow p-4 border">{wrongAnswers.map((qid,i)=>(<div key={qid} className="py-2 border-b last:border-b-0">خطأ #{i+1} — معرف السؤال: {qid}</div>))}<div className="text-sm text-slate-500 mt-2">اضغط "راجع محاولتي" لمشاهدة تفاصيل الأخطاء</div></div></div>)}
-        <div className="mt-6 flex gap-3"><Button onClick={() => router.push('/dashboard')} variant="outline">الرئيسية</Button><Button onClick={goToReview}>راجع محاولتي</Button></div>
+      <div>
+        <h1>{test?.title}</h1>
+        <h2>النتيجة النهائية</h2>
+        <div>الاستماع {scores.listening} / 20</div>
+        <div>القراءة {scores.reading} / 40</div>
+        <div>القواعد {scores.grammar} / 40</div>
+        <div>المجموع {scores.total} / 100</div>
+        <div>النسبة {scores.percentage}%</div>
+
+        {wrongAnswers.length > 0 && (
+          <div>
+            <h3>أسئلة أخطأت بها</h3>
+            {wrongAnswers.map((qid,i)=>(
+              <div key={qid}>خطأ #{i+1} — معرف السؤال: {qid}</div>
+            ))}
+            <div>اضغط "راجع محاولتي" لمشاهدة تفاصيل الأخطاء</div>
+          </div>
+        )}
+
+        <Button onClick={() => router.push('/dashboard')} variant="outline">الرئيسية</Button>
+        <Button onClick={goToReview}>راجع محاولتي</Button>
       </div>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-4"> {test?.title} </h1>
-      <h2 className="text-lg font-semibold mb-3">{currentChapter?.title}</h2>
+    <div>
+      <h2>{test?.title}</h2>
+      <h3>{currentChapter?.title}</h3>
 
       <div className="bg-slate-200 h-1.5 mb-6">
         <div className="h-full bg-blue-600 transition-all" style={{ width: `${((currentChapterIndex + 1) / Math.max(chapters.length, 1)) * 100}%` }} />
@@ -447,12 +508,13 @@ export default function TestPage() {
       <main>
         {validationError && <div className="mb-4 p-3 rounded bg-yellow-50 text-yellow-700 border border-yellow-200">{validationError}</div>}
 
-        {/* Listening: يسار المقطع، يمين الأسئلة — بدون transcript وأي إضافات */}
+        {/* Listening */}
         {currentChapter?.type === 'listening' && currentPiece && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white rounded-lg p-6 shadow-sm max-h-[70vh] overflow-y-auto text-left">
               <div className="mb-4">
                 <audio
+                  key={currentPiece?.id || currentPiece?.audio_url}
                   ref={(el) => { if (!el) return; questionRefs.current[`audio-${currentPiece?.id}`] = el; }}
                   controls
                   preload="none"
@@ -471,7 +533,6 @@ export default function TestPage() {
                   متصفحك لا يدعم عناصر الصوت.
                 </audio>
               </div>
-              {/* لا transcript هنا — بناءً على طلبك */}
             </div>
 
             <div>
@@ -518,7 +579,7 @@ export default function TestPage() {
           </div>
         )}
 
-        {/* Reading: القطعة يسار والأسئلة يمين — بدون أي نص إضافي إلا عند وجود underlines فعليًا في السؤال */}
+        {/* Reading */}
         {currentChapter?.type === 'reading' && currentPiece && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white rounded-lg p-6 shadow-sm max-h-[70vh] overflow-y-auto text-left">
@@ -545,33 +606,42 @@ export default function TestPage() {
                 })}
               </div>
 
-              {currentPiece.reading_questions.map((q, qi) => (
-                <div key={q.id} id={`q-${q.id}`} className="bg-white rounded-lg p-6 shadow-sm mb-3">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <p className="text-lg font-medium"><span className="text-emerald-600 mr-2 font-semibold">{qi + 1}.</span>{q.question_text}</p>
-                      <button type="button" onClick={() => toggleMark(q.id)} title="علامة للرجوع" className="text-yellow-600 ml-3"><Tag className={`w-4 h-4 ${markedMap[q.id] ? 'text-yellow-600' : 'text-slate-300'}`} /></button>
+              {currentPiece.reading_questions.map((q, qi) => {
+                const prepared = { ...q, base_text: resolveBaseTextForQuestion(q, currentPiece) };
+                const hasUnderline = (
+                  ((Array.isArray(prepared.underlined_words) && prepared.underlined_words.length > 0) ||
+                   (Array.isArray(prepared.underlined_positions) && prepared.underlined_positions.length > 0))
+                  && !!prepared.base_text
+                );
+
+                return (
+                  <div key={prepared.id} id={`q-${prepared.id}`} className="bg-white rounded-lg p-6 shadow-sm mb-3">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <p className="text-lg font-medium"><span className="text-emerald-600 mr-2 font-semibold">{qi + 1}.</span>{prepared.question_text}</p>
+                        <button type="button" onClick={() => toggleMark(prepared.id)} title="علامة للرجوع" className="text-yellow-600 ml-3"><Tag className={`w-4 h-4 ${markedMap[prepared.id] ? 'text-yellow-600' : 'text-slate-300'}`} /></button>
+                      </div>
+                      <button onClick={() => setActiveHintQuestion(prepared)} className="text-slate-500 hover:text-emerald-600 ml-4"><Lightbulb className="w-5 h-5" /></button>
                     </div>
-                    <button onClick={() => setActiveHintQuestion(q)} className="text-slate-500 hover:text-emerald-600 ml-4"><Lightbulb className="w-5 h-5" /></button>
-                  </div>
 
-                  {/* فقط إذا السؤال يحتوي underlined_words أو underlined_positions نعرض base_text مع تسطير */}
-                  {((Array.isArray(q.underlined_words) && q.underlined_words.length > 0) ||
-                    (Array.isArray(q.underlined_positions) && q.underlined_positions.length > 0)) && q.base_text && (
-                    <div className="mb-3 text-slate-700">{renderUnderlined(q.base_text, q.underlined_words, q.underlined_positions)}</div>
-                  )}
+                    {hasUnderline && (
+                      <div className="mb-3 text-slate-700">
+                        {renderUnderlined(prepared.base_text, prepared.underlined_words, prepared.underlined_positions)}
+                      </div>
+                    )}
 
-                  <div className="space-y-2">
-                    {q.options?.map((opt, oi) => (
-                      <label key={oi} className={`flex items-center p-4 border-2 rounded-md cursor-pointer ${answers[q.id] === opt ? 'border-emerald-600' : 'border-slate-200'}`}>
-                        <input type="radio" name={`q-${q.id}`} value={opt} onChange={() => handleSelect(q.id, opt)} checked={answers[q.id] === opt} className="w-4 h-4 text-emerald-600 mr-3" />
-                        <span className="font-medium mr-2">{String.fromCharCode(65 + oi)}.</span>
-                        <span>{opt}</span>
-                      </label>
-                    ))}
+                    <div className="space-y-2">
+                      {prepared.options?.map((opt, oi) => (
+                        <label key={oi} className={`flex items-center p-4 border-2 rounded-md cursor-pointer ${answers[prepared.id] === opt ? 'border-emerald-600' : 'border-slate-200'}`}>
+                          <input type="radio" name={`q-${prepared.id}`} value={opt} onChange={() => handleSelect(prepared.id, opt)} checked={answers[prepared.id] === opt} className="w-4 h-4 text-emerald-600 mr-3" />
+                          <span className="font-medium mr-2">{String.fromCharCode(65 + oi)}.</span>
+                          <span>{opt}</span>
+                        </label>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               <div className="flex justify-between mt-4">
                 <Button onClick={handlePrev} variant="outline"><ArrowLeft className="w-4 h-4 ml-2" /> السابق</Button>
@@ -585,9 +655,16 @@ export default function TestPage() {
         {currentChapter?.type === 'grammar' && (
           <div className="max-w-3xl mx-auto">
             {(() => {
-              const q = currentChapter.questions[currentPieceIndex];
-              if (!q) return null;
+              const rawQ = currentChapter.questions[currentPieceIndex];
+              if (!rawQ) return null;
+              const q = { ...rawQ, base_text: resolveBaseTextForQuestion(rawQ, null) };
+              const hasUnderline = (
+                ((Array.isArray(q.underlined_words) && q.underlined_words.length > 0) ||
+                 (Array.isArray(q.underlined_positions) && q.underlined_positions.length > 0))
+                && !!q.base_text
+              );
               const marked = !!markedMap[q.id];
+
               return (
                 <div className="bg-white rounded-lg p-8 shadow-sm">
                   <div className="flex items-start justify-between mb-6">
@@ -598,9 +675,7 @@ export default function TestPage() {
                     <button onClick={() => setActiveHintQuestion(q)} className="text-slate-500 hover:text-slate-700 ml-4"><Lightbulb className="w-5 h-5" /></button>
                   </div>
 
-                  {/* نفس القاعدة: لا نعرض أي تسطير أو base_text إلا إذا السؤال فيه underlines */}
-                  {((Array.isArray(q.underlined_words) && q.underlined_words.length > 0) ||
-                    (Array.isArray(q.underlined_positions) && q.underlined_positions.length > 0)) && q.base_text && (
+                  {hasUnderline && (
                     <div className="mb-4 text-slate-700">{renderUnderlined(q.base_text, q.underlined_words, q.underlined_positions)}</div>
                   )}
 
