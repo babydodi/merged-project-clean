@@ -32,8 +32,15 @@ export default function TestPage() {
   const [wrongAnswers, setWrongAnswers] = useState([]);
   const [seenIntroMap, setSeenIntroMap] = useState({});
 
+  // refs
   const questionRefs = useRef({});
-  const playedMapRef = useRef({}); // منع إعادة تشغيل الصوت
+  const playedMapRef = useRef({}); // optional tracking of played pieces
+
+  // audio control refs/state
+  const audioRef = useRef(null);
+  const lastTimeRef = useRef(0);
+  const [isLockedPlay, setIsLockedPlay] = useState(false); // true after user presses Play for current piece
+  const [isPlaying, setIsPlaying] = useState(false);
 
   useEffect(() => { initTest(); /* eslint-disable-next-line */ }, [id]);
 
@@ -296,6 +303,100 @@ export default function TestPage() {
     if (completeErr) console.error('Error updating attempt completion time:', completeErr);
   };
 
+  // ---------------- Audio control logic (manual play + lock) ----------------
+  // Ensure audio is fully reset when switching pieces to avoid auto-play on next piece
+  useEffect(() => {
+    // reset audio state for new piece
+    setIsLockedPlay(false);
+    setIsPlaying(false);
+    lastTimeRef.current = 0;
+
+    const el = audioRef.current;
+    if (!el) return;
+
+    try {
+      // stop and unload current media to prevent browser auto-play when src changes
+      el.pause();
+      el.currentTime = 0;
+      // remove src and force reload to ensure browser unloads the media
+      el.removeAttribute('src');
+      el.load();
+      // small delay then set new src (do not call play here)
+      setTimeout(() => {
+        if (!audioRef.current) return;
+        if (currentPiece?.audio_url) {
+          audioRef.current.src = currentPiece.audio_url;
+          // do not call play here — only user gesture should start playback
+        }
+      }, 60);
+    } catch (e) {
+      console.warn('audio reset error', e);
+    }
+  }, [currentPiece?.id]);
+
+  // handle manual play (user gesture)
+  function handleManualPlay() {
+    const el = audioRef.current;
+    if (!el) return;
+    // set lock before attempting play to avoid race conditions
+    setIsLockedPlay(true);
+    el.play().then(() => {
+      setIsPlaying(true);
+      // record that this piece was played (optional)
+      if (currentPiece?.id) playedMapRef.current[currentPiece.id] = true;
+    }).catch((err) => {
+      console.warn('play blocked or failed', err);
+      setIsLockedPlay(false);
+      setIsPlaying(false);
+    });
+  }
+
+  // attach listeners to prevent pause/seeking while locked
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el) return;
+
+    function onPause() {
+      if (isLockedPlay) {
+        // if locked, immediately attempt to resume playback
+        el.play().catch(() => {});
+      } else {
+        setIsPlaying(false);
+      }
+    }
+
+    function onSeeking() {
+      if (isLockedPlay) {
+        // prevent seeking forward by restoring last known time
+        el.currentTime = lastTimeRef.current || 0;
+      }
+    }
+
+    function onTimeUpdate() {
+      // store last time to prevent forward seeking
+      lastTimeRef.current = el.currentTime;
+    }
+
+    function onEnded() {
+      // unlock when piece ends
+      setIsLockedPlay(false);
+      setIsPlaying(false);
+    }
+
+    el.addEventListener('pause', onPause);
+    el.addEventListener('seeking', onSeeking);
+    el.addEventListener('timeupdate', onTimeUpdate);
+    el.addEventListener('ended', onEnded);
+
+    return () => {
+      el.removeEventListener('pause', onPause);
+      el.removeEventListener('seeking', onSeeking);
+      el.removeEventListener('timeupdate', onTimeUpdate);
+      el.removeEventListener('ended', onEnded);
+    };
+  }, [isLockedPlay, currentPiece?.id]);
+  // ---------------------------------------------------------------------------
+
   const handleNext = async () => {
     if (!currentChapter) return;
 
@@ -306,6 +407,10 @@ export default function TestPage() {
 
       const last = currentChapter.pieces.length - 1;
       if (currentPieceIndex < last) {
+        // ensure audio is stopped and reset before moving to next piece
+        if (audioRef.current) {
+          try { audioRef.current.pause(); audioRef.current.currentTime = 0; } catch (e) {}
+        }
         setCurrentPieceIndex(i => i + 1);
         setPhase('questions');
         return;
@@ -360,7 +465,13 @@ export default function TestPage() {
     if (currentChapter.type === 'listening') {
       if (phase === 'questions' && currentPieceIndex === 0) { setPhase('intro'); return; }
       if (phase === 'questions') await savePieceAnswers('listening');
-      if (currentPieceIndex > 0) setCurrentPieceIndex(i => i - 1);
+      if (currentPieceIndex > 0) {
+        // stop audio before moving back
+        if (audioRef.current) {
+          try { audioRef.current.pause(); audioRef.current.currentTime = 0; } catch (e) {}
+        }
+        setCurrentPieceIndex(i => i - 1);
+      }
     } else if (currentChapter.type === 'reading') {
       await savePieceAnswers('reading');
       if (currentPieceIndex > 0) setCurrentPieceIndex(i => i - 1);
@@ -376,7 +487,7 @@ export default function TestPage() {
   const [showMarkedPanel, setShowMarkedPanel] = useState(false);
   const markedList = useMemo(() => Object.keys(markedMap), [markedMap]);
 
-  // -------------- New helpers for underline resolution --------------
+  // -------------- Underline helpers --------------
   function findSentenceContaining(text, needle) {
     if (!text || !needle) return null;
     const sentences = String(text).split(/(?<=[.!?])\s+/);
@@ -400,8 +511,6 @@ export default function TestPage() {
     }
     return null;
   }
-  // ----------------------------------------------------------------
-
   function renderUnderlined(baseText, underlinedWords = null, underlinedPositions = null) {
     if (!baseText) return null;
     const hasUnderlines = (Array.isArray(underlinedWords) && underlinedWords.length > 0) || (Array.isArray(underlinedPositions) && underlinedPositions.length > 0);
@@ -442,22 +551,7 @@ export default function TestPage() {
     } catch (e) { return <span />; }
   }
   function escapeRegExp(string) { return String(string).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
-
-  // -------------- Audio reload effect --------------
-  useEffect(() => {
-    const el = questionRefs.current[`audio-${currentPiece?.id}`];
-    if (!el) return;
-    try {
-      el.load();
-      // only attempt to play; may be blocked if not a user gesture
-      el.play().catch(() => {});
-    } catch (e) {
-      console.warn('audio load/play error', e);
-    }
-    // reset play-block flag for new piece so user can play it
-    if (currentPiece?.id) playedMapRef.current[currentPiece.id] = false;
-  }, [currentPiece?.id, currentPiece?.audio_url]);
-  // ---------------------------------------------------
+  // ---------------------------------------------------------------
 
   if (loading) return (
     <div>جاري تحميل الاختبار...</div>
@@ -513,25 +607,36 @@ export default function TestPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white rounded-lg p-6 shadow-sm max-h-[70vh] overflow-y-auto text-left">
               <div className="mb-4">
+                {/* audio element WITHOUT controls to prevent default pause/seek UI.
+                    We use key to force recreation when piece changes and rely on manual Play */}
                 <audio
-                  key={currentPiece?.id || currentPiece?.audio_url}
-                  ref={(el) => { if (!el) return; questionRefs.current[`audio-${currentPiece?.id}`] = el; }}
-                  controls
+                  key={currentPiece?.id || 'audio-default'}
+                  ref={(el) => { audioRef.current = el; questionRefs.current[`audio-${currentPiece?.id}`] = el; }}
                   preload="none"
-                  onPlay={(e) => {
-                    const pid = currentPiece?.id;
-                    if (!pid) return;
-                    if (playedMapRef.current[pid]) {
-                      try { e.target.pause(); e.target.currentTime = 0; } catch (_) {}
-                      alert('هذا المقطع شُغّل سابقًا، لا يمكن إعادة تشغيله.');
-                      return;
-                    }
-                    playedMapRef.current[pid] = true;
-                  }}
                 >
                   <source src={currentPiece.audio_url} type="audio/mpeg" />
                   متصفحك لا يدعم عناصر الصوت.
                 </audio>
+
+                {/* Play button: user must press to start */}
+                {!isPlaying && (
+                  <div className="mt-3">
+                    <Button onClick={handleManualPlay} className="bg-blue-600 text-white">
+                      <Volume2 className="w-4 h-4 ml-2" /> تشغيل المقطع
+                    </Button>
+                    <div className="text-sm text-slate-500 mt-2">اضغط تشغيل لبدء المقطع. بعد البدء لا يمكن إيقافه أو تخطيه حتى ينتهي.</div>
+                  </div>
+                )}
+
+                {/* Locked message while playing */}
+                {isLockedPlay && (
+                  <div className="text-sm text-red-600 mt-3">المقطع قيد التشغيل ولا يمكن إيقافه أو تخطيه حتى ينتهي.</div>
+                )}
+
+                {/* Optional transcript */}
+                {currentPiece.transcript && (
+                  <div className="mt-4 text-slate-700 whitespace-pre-line">{currentPiece.transcript}</div>
+                )}
               </div>
             </div>
 
