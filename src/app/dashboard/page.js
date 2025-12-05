@@ -263,7 +263,7 @@ export default function Dashboard() {
 
               <div className="flex items-center gap-4">
                 <div className="text-right">
-                  <div className="text-sm text-gray-500">Today's Progress / تقدم اليوم</div>
+                  <div className="text-sm text-gray-500">Today&apos;s Progress / تقدم اليوم</div>
                   <div className="text-lg font-bold text-white">—</div>
                 </div>
 
