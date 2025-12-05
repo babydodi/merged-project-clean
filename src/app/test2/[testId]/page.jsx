@@ -3,55 +3,68 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { Volume2, ChevronRight, Lightbulb, Home, ArrowLeft } from 'lucide-react';
+import { Volume2, ChevronRight, ArrowLeft, Tag, Clock } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
-import HintModal from '../../../components/HintModal';
+
+// ثابت التوقيت المطلوب حسب ترتيب الفصول (بالدقائق)
+const REQUIRED_MINUTES_BY_INDEX = {
+  0: 13, // Listening Part 1 (5)
+  1: 13, // Listening Part 2 (5)
+  2: 20, // Listening Part 3 (10)
+  3: 20, // Reading Part 1 (15)
+  4: 20, // Reading Part 2 (15)
+  5: 20, // Reading Part 3 (10)
+  6: 20, // Grammar Part 1 (20)
+  7: 10, // Grammar Part 2 (10)
+  8: 10, // Grammar Part 3 (10)
+};
+
+// مساعد لتحويل دقائق إلى ثواني
+const minsToSecs = (m) => Math.max(0, Math.round(m * 60));
 
 export default function TestPage() {
   const { testId: id } = useParams();
   const router = useRouter();
   const supabase = createClientComponentClient();
 
-  // state أساسية
+  const [loading, setLoading] = useState(true);
+  const [attemptId, setAttemptId] = useState(null);
+
   const [test, setTest] = useState(null);
   const [chapters, setChapters] = useState([]);
-  const [attemptId, setAttemptId] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  // تنقل داخل الاختبار
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
   const [currentPieceIndex, setCurrentPieceIndex] = useState(0);
-  const [phase, setPhase] = useState('intro'); // listening: intro | questions
   const [showResult, setShowResult] = useState(false);
 
-  // إجابات ومتابعة
-  const [answers, setAnswers] = useState({}); // questionId -> selectedChoice
-  const [answeredMap, setAnsweredMap] = useState({}); // questionId -> true
+  const [answers, setAnswers] = useState({});
+  const [answeredMap, setAnsweredMap] = useState({});
+  const [markedMap, setMarkedMap] = useState({});
   const [validationError, setValidationError] = useState('');
-  const [activeHintQuestion, setActiveHintQuestion] = useState(null);
 
-  // نتائج
-  const [scores, setScores] = useState({ listening: 0, reading: 0, grammar: 0, total: 0, percentage: 0 });
-  const [wrongAnswers, setWrongAnswers] = useState([]); // ids
+  // التوقيت لكل فصل
+  const [chapterRemainingSecs, setChapterRemainingSecs] = useState(null);
+  const timerRef = useRef(null);
 
-  // refs للتمرير
-  const questionRefs = useRef({});
+  // الصوت
+  const audioRef = useRef(null);
+  const lastTimeRef = useRef(0);
+  const [isLockedPlay, setIsLockedPlay] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
 
-  useEffect(() => {
-    initTest();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  // تتبع التشغيل لكل قطعة
+  const playedMapRef = useRef({});
 
-  const initTest = async () => {
+  useEffect(() => { initTest(); /* eslint-disable-next-line */ }, [id]);
+
+  async function initTest() {
     try {
       if (!id) { setLoading(false); return; }
       setLoading(true);
 
-      // إنشاء محاولة جديدة
+      // إنشاء attempt
       const { data: userData } = await supabase.auth.getUser();
       const currentUser = userData?.user || null;
       const payload = currentUser ? { test_id: id, user_id: currentUser.id } : { test_id: id };
-
       const { data: attempt, error: attemptErr } = await supabase
         .from('test_attempts')
         .insert(payload)
@@ -60,7 +73,7 @@ export default function TestPage() {
       if (attemptErr) throw attemptErr;
       setAttemptId(attempt.id);
 
-      // جلب بيانات الاختبار
+      // اختبار
       const { data: testData, error: testErr } = await supabase
         .from('tests')
         .select('*')
@@ -69,7 +82,7 @@ export default function TestPage() {
       if (testErr) throw testErr;
       setTest(testData);
 
-      // جلب الفصول
+      // فصول
       const { data: chaptersData, error: chErr } = await supabase
         .from('chapters')
         .select('id, type, title, idx, duration_seconds')
@@ -77,26 +90,18 @@ export default function TestPage() {
         .order('idx', { ascending: true });
       if (chErr) throw chErr;
 
+      // تحميل محتوى كل فصل حسب نوعه
       const assembled = [];
-      for (const ch of chaptersData) {
+      for (const ch of chaptersData || []) {
         if (ch.type === 'listening') {
           const { data: pieces, error: lpErr } = await supabase
             .from('listening_pieces')
-            .select(`
-              id,
-              audio_url,
-              transcript,
-              idx,
+            .select(
+              `id, audio_url, transcript, idx,
               listening_questions (
-                id,
-                question_text,
-                options,
-                answer,
-                hint,
-                explanation,
-                idx
-              )
-            `)
+                id, idx, question_text, options, answer, hint, explanation
+              )`
+            )
             .eq('chapter_id', ch.id)
             .order('idx', { ascending: true });
           if (lpErr) throw lpErr;
@@ -104,29 +109,36 @@ export default function TestPage() {
         } else if (ch.type === 'reading') {
           const { data: pieces, error: rpErr } = await supabase
             .from('reading_pieces')
-            .select(`
-              id,
-              passage_title,
-              passage,
-              idx,
+            .select(
+              `id, passage_title, passage, idx,
               reading_questions (
-                id,
-                question_text,
-                options,
-                answer,
-                hint,
-                explanation,
-                idx
-              )
-            `)
+                id, idx, question_text, options, answer, hint, explanation, base_text, underlined_words, underlined_positions
+              )`
+            )
             .eq('chapter_id', ch.id)
             .order('idx', { ascending: true });
           if (rpErr) throw rpErr;
-          assembled.push({ ...ch, pieces: pieces || [] });
+
+          // تفكيك الفقرات إذا كانت مرقمة
+          const normalizedPieces = (pieces || []).map(p => {
+            const piece = { ...p };
+            if (piece.passage && typeof piece.passage === 'string') {
+              const parts = piece.passage.split(/\n{2,}/).map(str => str.trim()).filter(Boolean);
+              const paragraphs = parts.map(pt => {
+                const m = pt.match(/^\s*(\d+)\.\s*(.*)$/s);
+                if (m) return { num: Number(m[1]), text: m[2] };
+                return null;
+              }).filter(Boolean);
+              if (paragraphs.length) piece.passage_paragraphs = paragraphs;
+            }
+            return piece;
+          });
+
+          assembled.push({ ...ch, pieces: normalizedPieces });
         } else if (ch.type === 'grammar') {
           const { data: questions, error: gErr } = await supabase
             .from('grammar_questions')
-            .select('id, question_text, options, answer, hint, explanation, idx, category')
+            .select('id, idx, question_text, options, answer, hint, explanation, category, base_text, underlined_words, underlined_positions')
             .eq('chapter_id', ch.id)
             .order('idx', { ascending: true });
           if (gErr) throw gErr;
@@ -134,29 +146,72 @@ export default function TestPage() {
         }
       }
 
-      // ترتيب نوعي ثم idx
-      const order = { listening: 0, reading: 1, grammar: 2 };
-      assembled.sort((a, b) => {
-        const t = (order[a.type] ?? 99) - (order[b.type] ?? 99);
-        if (t !== 0) return t;
-        return (a.idx ?? 0) - (b.idx ?? 0);
+      // ترتيب بحسب idx كما في DB
+      assembled.sort((a, b) => (a.idx ?? 0) - (b.idx ?? 0));
+
+      // فرض التوقيت المطلوب لو غير موجود
+      const enforced = assembled.map((ch, i) => {
+        const mins = REQUIRED_MINUTES_BY_INDEX[i];
+        const enforcedDuration = mins != null ? minsToSecs(mins) : ch.duration_seconds;
+        return { ...ch, duration_seconds: enforcedDuration };
       });
 
-      setChapters(assembled);
+      setChapters(enforced);
+
+      // إعادة الضبط
       setCurrentChapterIndex(0);
       setCurrentPieceIndex(0);
-      setPhase('intro');
       setShowResult(false);
       setAnswers({});
       setAnsweredMap({});
+      setMarkedMap({});
       setValidationError('');
-      setWrongAnswers([]);
-      setScores({ listening: 0, reading: 0, grammar: 0, total: 0, percentage: 0 });
+
+      // بدء المؤقت للفصل الأول
+      const firstDuration = enforced[0]?.duration_seconds ?? minsToSecs(13);
+      setChapterRemainingSecs(firstDuration);
+      startChapterTimer(firstDuration);
     } catch (error) {
       console.error('Init error:', error);
     } finally {
       setLoading(false);
     }
+  }
+
+  // مؤقت الفصل
+  function startChapterTimer(totalSecs) {
+    clearInterval(timerRef.current);
+    setChapterRemainingSecs(totalSecs);
+    timerRef.current = setInterval(() => {
+      setChapterRemainingSecs(prev => {
+        if (prev == null) return null;
+        if (prev <= 1) {
+          clearInterval(timerRef.current);
+          handleChapterTimeout();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }
+
+  function stopChapterTimer() {
+    clearInterval(timerRef.current);
+  }
+
+  // عند انتهاء الوقت: احفظ الفصل وانتقل
+  async function handleChapterTimeout() {
+    await saveAllAnswersInCurrentChapter();
+    goToNextChapterOrFinish();
+  }
+
+  // تنسيق الوقت
+  const formatMMSS = (secs) => {
+    const m = Math.floor((secs || 0) / 60);
+    const s = Math.floor((secs || 0) % 60);
+    const mm = String(m).padStart(2, '0');
+    const ss = String(s).padStart(2, '0');
+    return `${mm}:${ss}`;
   };
 
   const currentChapter = useMemo(() => chapters[currentChapterIndex], [chapters, currentChapterIndex]);
@@ -166,170 +221,186 @@ export default function TestPage() {
     return currentChapter.pieces?.[currentPieceIndex] || null;
   }, [currentChapter, currentPieceIndex]);
 
-  // حفظ إجابات المقطع الحالي (upsert)
-  const savePieceAnswers = async chapterType => {
-    if (!attemptId || !currentChapter) return [];
-    let qList = [];
-    if (chapterType === 'listening') qList = currentChapter?.pieces?.[currentPieceIndex]?.listening_questions || [];
-    else if (chapterType === 'reading') qList = currentChapter?.pieces?.[currentPieceIndex]?.reading_questions || [];
-    else if (chapterType === 'grammar') {
-      const q = currentChapter?.questions?.[currentPieceIndex];
-      if (q) qList = [q];
-    }
-
+  // حفظ الإجابات في الفصل الحالي
+  async function saveAllAnswersInCurrentChapter() {
+    if (!attemptId || !currentChapter) return;
     const rows = [];
-    for (const q of qList) {
-      if (answers[q.id] !== undefined) {
+
+    if (currentChapter.type === 'listening') {
+      for (const p of (currentChapter.pieces || [])) {
+        for (const q of (p.listening_questions || [])) {
+          const selected = answers[q.id];
+          const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
+          rows.push({
+            attempt_id: attemptId,
+            question_id: q.id,
+            question_type: 'listening',
+            selected_choice: selected != null ? String(selected) : null,
+            is_correct: isCorrect,
+            answered_at: new Date().toISOString(),
+          });
+          if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
+        }
+      }
+    } else if (currentChapter.type === 'reading') {
+      for (const p of (currentChapter.pieces || [])) {
+        for (const q of (p.reading_questions || [])) {
+          const selected = answers[q.id];
+          const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
+          rows.push({
+            attempt_id: attemptId,
+            question_id: q.id,
+            question_type: 'reading',
+            selected_choice: selected != null ? String(selected) : null,
+            is_correct: isCorrect,
+            answered_at: new Date().toISOString(),
+          });
+          if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
+        }
+      }
+    } else if (currentChapter.type === 'grammar') {
+      for (const q of (currentChapter.questions || [])) {
         const selected = answers[q.id];
+        const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
         rows.push({
           attempt_id: attemptId,
           question_id: q.id,
-          question_type: chapterType,
-          selected_choice: selected,
-          is_correct: selected === q.answer,
-          answered_at: new Date().toISOString()
+          question_type: 'grammar',
+          selected_choice: selected != null ? String(selected) : null,
+          is_correct: isCorrect,
+          answered_at: new Date().toISOString(),
         });
+        if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
       }
     }
 
-    if (rows.length === 0) return [];
+    if (rows.length) {
+      const { error } = await supabase.from('question_attempts').upsert(rows, { onConflict: ['attempt_id', 'question_id'] });
+      if (error) console.error('saveAllAnswers error', error);
+    }
+  }
 
-    const { data, error } = await supabase
-      .from('question_attempts')
-      .upsert(rows, { onConflict: ['attempt_id', 'question_id'] });
+  // عند الانتقال بين الفصول، أعِد المؤقت بناءً على الفصل الجديد
+  useEffect(() => {
+    if (!currentChapter) return;
+    stopAudioHardReset();
+    stopChapterTimer();
+    const secs = currentChapter.duration_seconds ?? minsToSecs(REQUIRED_MINUTES_BY_INDEX[currentChapterIndex] || 20);
+    startChapterTimer(secs);
+    setCurrentPieceIndex(0);
+    setValidationError('');
+    // إيقاف الصوت المفتوح
+    try { if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; } } catch {}
+  }, [currentChapterIndex]);
 
-    if (error) console.error('savePieceAnswers upsert error', error);
-    return data || [];
-  };
+  // منطق الصوت — زر تشغيل فقط وقفل منع الإيقاف/التخطي
+  useEffect(() => {
+    setIsLockedPlay(false);
+    setIsPlaying(false);
+    lastTimeRef.current = 0;
 
-  // تحديث اختيار محليًا (بدون عرض فوري للصح/الغلط)
+    const el = audioRef.current;
+    if (!el) return;
+
+    try {
+      el.pause();
+      el.removeAttribute('src');
+      el.src = '';
+      el.load();
+      setTimeout(() => {
+        if (!audioRef.current) return;
+        if (currentPiece?.audio_url) {
+          audioRef.current.src = currentPiece.audio_url;
+          audioRef.current.load();
+        }
+      }, 80);
+    } catch (e) {
+      console.warn('audio reset error', e);
+    }
+  }, [currentPiece?.id]);
+
+  function handleManualPlay() {
+    const el = audioRef.current;
+    if (!el) return;
+    setIsLockedPlay(true);
+    el.play().then(() => {
+      setIsPlaying(true);
+      if (currentPiece?.id) playedMapRef.current[currentPiece.id] = true;
+    }).catch((err) => {
+      console.warn('play failed', err);
+      setIsLockedPlay(false);
+      setIsPlaying(false);
+    });
+  }
+
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el) return;
+
+    function onPause() {
+      // أثناء القفل: إعادة تشغيل فورية لمنع الإيقاف
+      if (isLockedPlay) {
+        el.play().catch(() => {});
+      } else {
+        setIsPlaying(false);
+      }
+    }
+
+    function onSeeking() {
+      // منع التخطي للأمام أثناء القفل
+      if (isLockedPlay) {
+        el.currentTime = lastTimeRef.current || 0;
+      }
+    }
+
+    function onTimeUpdate() {
+      lastTimeRef.current = el.currentTime;
+    }
+
+    function onEnded() {
+      setIsLockedPlay(false);
+      setIsPlaying(false);
+    }
+
+    el.addEventListener('pause', onPause);
+    el.addEventListener('seeking', onSeeking);
+    el.addEventListener('timeupdate', onTimeUpdate);
+    el.addEventListener('ended', onEnded);
+
+    return () => {
+      el.removeEventListener('pause', onPause);
+      el.removeEventListener('seeking', onSeeking);
+      el.removeEventListener('timeupdate', onTimeUpdate);
+      el.removeEventListener('ended', onEnded);
+    };
+  }, [isLockedPlay, currentPiece?.id]);
+
+  function stopAudioHardReset() {
+    const el = audioRef.current;
+    if (!el) return;
+    try {
+      el.pause();
+      el.removeAttribute('src');
+      el.src = '';
+      el.load();
+      setIsLockedPlay(false);
+      setIsPlaying(false);
+      lastTimeRef.current = 0;
+    } catch {}
+  }
+
   const handleSelect = (questionId, value) => {
     setAnswers(prev => ({ ...prev, [questionId]: value }));
     setAnsweredMap(prev => ({ ...prev, [questionId]: true }));
   };
 
-  // غير مجاب في المقطع الحالي
-  const getUnansweredInCurrent = () => {
-    const qIds = [];
-    if (!currentChapter) return qIds;
-    if (currentChapter.type === 'listening') {
-      const qs = currentChapter.pieces[currentPieceIndex]?.listening_questions || [];
-      qs.forEach(q => { if (!answeredMap[q.id]) qIds.push(q.id); });
-    } else if (currentChapter.type === 'reading') {
-      const qs = currentChapter.pieces[currentPieceIndex]?.reading_questions || [];
-      qs.forEach(q => { if (!answeredMap[q.id]) qIds.push(q.id); });
-    } else if (currentChapter.type === 'grammar') {
-      const q = currentChapter.questions[currentPieceIndex];
-      if (q && !answeredMap[q.id]) qIds.push(q.id);
-    }
-    return qIds;
-  };
-
-  // دالة حساب النتائج مع اعتماده على field category لنوع الـ vocab
-  const finalizeScoresAndWrongs = async () => {
-    if (!attemptId) return;
-
-    const { data: attemptsRows = [], error: attemptsErr } = await supabase
-      .from('question_attempts')
-      .select('question_id, question_type, selected_choice, is_correct')
-      .eq('attempt_id', attemptId);
-    if (attemptsErr) {
-      console.error('fetch question_attempts error', attemptsErr);
-      return;
-    }
-
-    const stats = {
-      listening: { total: 0, correct: 0 },
-      reading: { total: 0, correct: 0 },
-      grammar: { total: 0, correct: 0, vocab_total: 0, vocab_correct: 0 }
-    };
-
-    const grammarQuestionIds = attemptsRows.filter(r => r.question_type === 'grammar').map(r => r.question_id);
-
-    // جلب category من جدول grammar_questions
-    let grammarMeta = {};
-    if (grammarQuestionIds.length) {
-      const { data: gQs = [], error: gErr } = await supabase
-        .from('grammar_questions')
-        .select('id, category, answer')
-        .in('id', grammarQuestionIds);
-      if (gErr) console.error('fetch grammar metadata error', gErr);
-      (gQs || []).forEach(q => { grammarMeta[q.id] = q; });
-    }
-
-    for (const r of attemptsRows) {
-      if (r.question_type === 'listening') {
-        stats.listening.total += 1;
-        if (r.is_correct) stats.listening.correct += 1;
-      } else if (r.question_type === 'reading') {
-        stats.reading.total += 1;
-        if (r.is_correct) stats.reading.correct += 1;
-      } else if (r.question_type === 'grammar') {
-        stats.grammar.total += 1;
-        if (r.is_correct) stats.grammar.correct += 1;
-
-        const meta = grammarMeta[r.question_id];
-        const isVocab = meta ? (String(meta.category).toLowerCase() === 'vocab' || String(meta.category).toLowerCase() === 'vocabulary') : false;
-        if (isVocab) {
-          stats.grammar.vocab_total += 1;
-          if (r.is_correct) stats.grammar.vocab_correct += 1;
-        }
-      }
-    }
-
-    const weights = { listening: 20, reading: 40, grammar: 40 };
-    const grammarVocabWeight = weights.grammar * 0.10; // 4
-    const grammarNonVocabWeight = weights.grammar - grammarVocabWeight; // 36
-
-    const pct = (correct, total) => (total ? (correct / total) : 0);
-
-    const listeningScore = Math.round(pct(stats.listening.correct, stats.listening.total) * weights.listening);
-    const readingScore = Math.round(pct(stats.reading.correct, stats.reading.total) * weights.reading);
-
-    const vocabScore = Math.round(pct(stats.grammar.vocab_correct, stats.grammar.vocab_total) * grammarVocabWeight);
-    const nonVocabTotal = stats.grammar.total - stats.grammar.vocab_total;
-    const nonVocabCorrect = stats.grammar.correct - stats.grammar.vocab_correct;
-    const nonVocabScore = Math.round(pct(nonVocabCorrect, nonVocabTotal) * grammarNonVocabWeight);
-
-    const grammarScore = vocabScore + nonVocabScore;
-    const totalScore = listeningScore + readingScore + grammarScore;
-
-    const totalQuestions = stats.listening.total + stats.reading.total + stats.grammar.total;
-    const totalCorrect = stats.listening.correct + stats.reading.correct + stats.grammar.correct;
-    const percentage = totalQuestions ? Math.round((totalCorrect / totalQuestions) * 100 * 100) / 100 : 0;
-
-    setScores({ listening: listeningScore, reading: readingScore, grammar: grammarScore, total: totalScore, percentage });
-
-    const wrongRows = attemptsRows.filter(r => !r.is_correct);
-    const wrongQuestionIds = wrongRows.map(r => r.question_id);
-    setWrongAnswers(wrongQuestionIds);
-
-    // حفظ النتائج إن لم تكن موجودة
-    const { data: existing = [], error: exErr } = await supabase
-      .from('user_results')
-      .select('id')
-      .eq('attempt_id', attemptId)
-      .limit(1);
-    if (exErr) console.error('check existing user_results', exErr);
-
-    if (!existing || existing.length === 0) {
-      const { error: resultErr } = await supabase
-        .from('user_results')
-        .insert({
-          attempt_id: attemptId,
-          score: totalScore,
-          total_questions: totalQuestions,
-          percentage
-        });
-      if (resultErr) console.error('Error saving user result:', resultErr);
-    }
-
-    // تحديث completed_at
-    const { error: completeErr } = await supabase
-      .from('test_attempts')
-      .update({ completed_at: new Date().toISOString() })
-      .eq('id', attemptId);
-    if (completeErr) console.error('Error updating attempt completion time:', completeErr);
+  const toggleMark = (questionId) => {
+    setMarkedMap(prev => {
+      const next = { ...prev };
+      if (next[questionId]) delete next[questionId];
+      else next[questionId] = true;
+      return next;
+    });
   };
 
   const goToQuestionInCurrent = (questionId) => {
@@ -337,322 +408,467 @@ export default function TestPage() {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
-  // زر التالي: حفظ، تحقق، انتقال
+  const getUnansweredInChapter = (chapter) => {
+    const qIds = [];
+    if (!chapter) return qIds;
+    if (chapter.type === 'listening') {
+      for (const p of (chapter.pieces || [])) for (const q of (p.listening_questions || [])) if (!answeredMap[q.id]) qIds.push(q.id);
+    } else if (chapter.type === 'reading') {
+      for (const p of (chapter.pieces || [])) for (const q of (p.reading_questions || [])) if (!answeredMap[q.id]) qIds.push(q.id);
+    } else if (chapter.type === 'grammar') {
+      for (const q of (chapter.questions || [])) if (!answeredMap[q.id]) qIds.push(q.id);
+    }
+    return qIds;
+  };
+
+  async function finalizeScoresAndFinish() {
+    if (!attemptId) return;
+    const { data: attemptsRows = [], error: attemptsErr } = await supabase
+      .from('question_attempts')
+      .select('question_id, question_type, selected_choice, is_correct')
+      .eq('attempt_id', attemptId);
+    if (attemptsErr) { console.error('fetch question_attempts error', attemptsErr); return; }
+
+    const stats = { listening: { total: 0, correct: 0 }, reading: { total: 0, correct: 0 }, grammar: { total: 0, correct: 0 } };
+    for (const r of attemptsRows) {
+      if (r.question_type === 'listening') { stats.listening.total += 1; if (r.is_correct) stats.listening.correct += 1; }
+      else if (r.question_type === 'reading') { stats.reading.total += 1; if (r.is_correct) stats.reading.correct += 1; }
+      else if (r.question_type === 'grammar') { stats.grammar.total += 1; if (r.is_correct) stats.grammar.correct += 1; }
+    }
+
+    // توزيع بسيط للدرجات: 100 على المجموع
+    const totalQuestions = stats.listening.total + stats.reading.total + stats.grammar.total;
+    const totalCorrect = stats.listening.correct + stats.reading.correct + stats.grammar.correct;
+    const percentage = totalQuestions ? Math.round((totalCorrect / totalQuestions) * 100 * 100) / 100 : 0;
+    const totalScore = Math.round(percentage); // أو عدّل الوزن حسب رغبتك
+
+    // حفظ النتيجة النهائية
+    const { data: existing = [], error: exErr } = await supabase.from('user_results').select('id').eq('attempt_id', attemptId).limit(1);
+    if (exErr) console.error('check existing user_results', exErr);
+    if (!existing || existing.length === 0) {
+      const { error: resultErr } = await supabase.from('user_results').insert({ attempt_id: attemptId, score: totalScore, total_questions: totalQuestions, percentage });
+      if (resultErr) console.error('Error saving user result:', resultErr);
+    }
+
+    const { error: completeErr } = await supabase.from('test_attempts').update({ completed_at: new Date().toISOString() }).eq('id', attemptId);
+    if (completeErr) console.error('Error updating attempt completion time:', completeErr);
+
+    setShowResult(true);
+    stopChapterTimer();
+    stopAudioHardReset();
+  }
+
+  async function goToNextChapterOrFinish() {
+    // تحقق من الأسئلة غير المُجابة إن كان هناك وقت
+    const unanswered = getUnansweredInChapter(currentChapter);
+    if (unanswered.length > 0) {
+      const ok = window.confirm(`فيه ${unanswered.length} سؤال غير مُجاب في هذا الفصل. تبي تتابع للفصل التالي؟`);
+      if (!ok) { goToQuestionInCurrent(unanswered[0]); return; }
+    }
+
+    if (currentChapterIndex < chapters.length - 1) {
+      setCurrentChapterIndex(i => i + 1);
+      setCurrentPieceIndex(0);
+    } else {
+      await finalizeScoresAndFinish();
+    }
+  }
+
   const handleNext = async () => {
     if (!currentChapter) return;
 
-    // الحفظ
     if (currentChapter.type === 'listening') {
-      if (phase === 'intro') { setPhase('questions'); return; }
-      await savePieceAnswers('listening');
-    } else if (currentChapter.type === 'reading') {
-      await savePieceAnswers('reading');
-    } else if (currentChapter.type === 'grammar') {
-      await savePieceAnswers('grammar');
+      // حفظ إجابات قطعة الاستماع الحالية فقط
+      const p = currentChapter.pieces?.[currentPieceIndex];
+      if (p) {
+        const rows = [];
+        for (const q of (p.listening_questions || [])) {
+          const selected = answers[q.id];
+          const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
+          rows.push({
+            attempt_id: attemptId,
+            question_id: q.id,
+            question_type: 'listening',
+            selected_choice: selected != null ? String(selected) : null,
+            is_correct: isCorrect,
+            answered_at: new Date().toISOString(),
+          });
+          if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
+        }
+        if (rows.length) {
+          const { error } = await supabase.from('question_attempts').upsert(rows, { onConflict: ['attempt_id', 'question_id'] });
+          if (error) console.error('save listening piece answers error', error);
+        }
+      }
+
+      const last = (currentChapter.pieces?.length || 1) - 1;
+      if (currentPieceIndex < last) {
+        stopAudioHardReset();
+        setCurrentPieceIndex(i => i + 1);
+        return;
+      }
+      // آخر قطعة -> انتقل للفصل التالي
+      await saveAllAnswersInCurrentChapter();
+      goToNextChapterOrFinish();
+      return;
     }
 
-    // تحقق
-    const unanswered = getUnansweredInCurrent();
-    if (unanswered.length > 0) {
-      setValidationError(`فيه ${unanswered.length} سؤال ما جاوبت عليه. اضغط رقم السؤال للرجوع أو جاوب الآن.`);
-      goToQuestionInCurrent(unanswered[0]);
-      return;
-    } else {
-      setValidationError('');
-    }
-
-    // انتقال
-    if (currentChapter.type === 'listening') {
-      const last = currentChapter.pieces.length - 1;
-      if (currentPieceIndex < last) { setCurrentPieceIndex(i => i + 1); setPhase('intro'); }
-      else { setCurrentChapterIndex(ci => ci + 1); setCurrentPieceIndex(0); setPhase('intro'); }
-      return;
-    }
     if (currentChapter.type === 'reading') {
-      const last = currentChapter.pieces.length - 1;
-      if (currentPieceIndex < last) setCurrentPieceIndex(i => i + 1);
-      else { setCurrentChapterIndex(ci => ci + 1); setCurrentPieceIndex(0); setPhase('intro'); }
+      // حفظ إجابات قطعة القراءة الحالية فقط
+      const p = currentChapter.pieces?.[currentPieceIndex];
+      if (p) {
+        const rows = [];
+        for (const q of (p.reading_questions || [])) {
+          const selected = answers[q.id];
+          const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
+          rows.push({
+            attempt_id: attemptId,
+            question_id: q.id,
+            question_type: 'reading',
+            selected_choice: selected != null ? String(selected) : null,
+            is_correct: isCorrect,
+            answered_at: new Date().toISOString(),
+          });
+          if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
+        }
+        if (rows.length) {
+          const { error } = await supabase.from('question_attempts').upsert(rows, { onConflict: ['attempt_id', 'question_id'] });
+          if (error) console.error('save reading piece answers error', error);
+        }
+      }
+
+      const last = (currentChapter.pieces?.length || 1) - 1;
+      if (currentPieceIndex < last) {
+        setCurrentPieceIndex(i => i + 1);
+        return;
+      }
+      // آخر قطعة
+      await saveAllAnswersInCurrentChapter();
+      goToNextChapterOrFinish();
       return;
     }
+
     if (currentChapter.type === 'grammar') {
-      const last = currentChapter.questions.length - 1;
-      if (currentPieceIndex < last) setCurrentPieceIndex(i => i + 1);
-      else { await finalizeScoresAndWrongs(); setShowResult(true); }
+      // حفظ سؤال القواعد الحالي ثم التنقل
+      const q = currentChapter.questions?.[currentPieceIndex];
+      if (q) {
+        const selected = answers[q.id];
+        const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
+        const row = {
+          attempt_id: attemptId,
+          question_id: q.id,
+          question_type: 'grammar',
+          selected_choice: selected != null ? String(selected) : null,
+          is_correct: isCorrect,
+          answered_at: new Date().toISOString(),
+        };
+        const { error } = await supabase.from('question_attempts').upsert([row], { onConflict: ['attempt_id', 'question_id'] });
+        if (error) console.error('save grammar question error', error);
+        if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
+      }
+
+      const last = (currentChapter.questions?.length || 1) - 1;
+      if (currentPieceIndex < last) {
+        setCurrentPieceIndex(i => i + 1);
+        return;
+      }
+      // آخر سؤال
+      await saveAllAnswersInCurrentChapter();
+      goToNextChapterOrFinish();
       return;
     }
   };
 
-  // زر السابق: يسمح بالرجوع داخل نفس الفصل فقط
   const handlePrev = async () => {
     if (!currentChapter) return;
+
     if (currentChapter.type === 'listening') {
-      if (phase === 'questions') { setPhase('intro'); return; }
-      await savePieceAnswers('listening');
+      const p = currentChapter.pieces?.[currentPieceIndex];
+      if (p) {
+        const rows = [];
+        for (const q of (p.listening_questions || [])) {
+          const selected = answers[q.id];
+          const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
+          rows.push({
+            attempt_id: attemptId,
+            question_id: q.id,
+            question_type: 'listening',
+            selected_choice: selected != null ? String(selected) : null,
+            is_correct: isCorrect,
+            answered_at: new Date().toISOString(),
+          });
+        }
+        if (rows.length) {
+          const { error } = await supabase.from('question_attempts').upsert(rows, { onConflict: ['attempt_id', 'question_id'] });
+          if (error) console.error('save prev listening answers error', error);
+        }
+      }
+      if (currentPieceIndex > 0) {
+        stopAudioHardReset();
+        setCurrentPieceIndex(i => i - 1);
+      }
+      return;
+    }
+
+    if (currentChapter.type === 'reading') {
+      const p = currentChapter.pieces?.[currentPieceIndex];
+      if (p) {
+        const rows = [];
+        for (const q of (p.reading_questions || [])) {
+          const selected = answers[q.id];
+          const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
+          rows.push({
+            attempt_id: attemptId,
+            question_id: q.id,
+            question_type: 'reading',
+            selected_choice: selected != null ? String(selected) : null,
+            is_correct: isCorrect,
+            answered_at: new Date().toISOString(),
+          });
+        }
+        if (rows.length) {
+          const { error } = await supabase.from('question_attempts').upsert(rows, { onConflict: ['attempt_id', 'question_id'] });
+          if (error) console.error('save prev reading answers error', error);
+        }
+      }
       if (currentPieceIndex > 0) setCurrentPieceIndex(i => i - 1);
-    } else if (currentChapter.type === 'reading') {
-      await savePieceAnswers('reading');
-      if (currentPieceIndex > 0) setCurrentPieceIndex(i => i - 1);
-    } else if (currentChapter.type === 'grammar') {
-      await savePieceAnswers('grammar');
+      return;
+    }
+
+    if (currentChapter.type === 'grammar') {
+      const q = currentChapter.questions?.[currentPieceIndex];
+      if (q) {
+        const selected = answers[q.id];
+        const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
+        const row = {
+          attempt_id: attemptId,
+          question_id: q.id,
+          question_type: 'grammar',
+          selected_choice: selected != null ? String(selected) : null,
+          is_correct: isCorrect,
+          answered_at: new Date().toISOString(),
+        };
+        const { error } = await supabase.from('question_attempts').upsert([row], { onConflict: ['attempt_id', 'question_id'] });
+        if (error) console.error('save prev grammar question error', error);
+      }
       if (currentPieceIndex > 0) setCurrentPieceIndex(i => i - 1);
     }
-    setValidationError('');
   };
 
-  const goToReview = () => {
-    if (!attemptId) return;
-    router.push(`/attempts/${attemptId}/review`);
-  };
+  const goToReview = () => { if (!attemptId) return; router.push(`/attempts/${attemptId}/review`); };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-slate-600">جاري تحميل الاختبار...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!currentChapter && !showResult) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="text-center">
-          <p className="text-slate-600">لا توجد فصول متاحة لهذا الاختبار.</p>
-          <Button onClick={() => router.push('/dashboard')} variant="outline" className="mt-4">
-            <Home className="w-4 h-4 mr-2" />
-            الرجوع للاختبارات
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  if (loading) return (<div className="p-6">جاري تحميل الاختبار...</div>);
 
   if (showResult) {
     return (
-      <div className="min-h-screen bg-slate-50" dir="rtl">
-        <header className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-10">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-2xl font-bold text-slate-900">{test?.title}</h1>
-                <p className="text-sm text-slate-600 mt-1">النتيجة النهائية</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button onClick={() => router.push('/dashboard')} variant="outline" className="border-slate-300">
-                  <Home className="w-4 h-4 ml-2" />
-                  الرئيسية
-                </Button>
-                <Button onClick={goToReview} className="bg-blue-600 hover:bg-blue-700 text-white">
-                  راجع محاولتي
-                </Button>
-              </div>
-            </div>
-          </div>
-        </header>
-
-        <main className="max-w-3xl mx-auto px-4 py-8">
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-bold mb-4">ملخص الدرجات</h2>
-            <div className="grid grid-cols-1 gap-3">
-              <div className="flex justify-between"><div>الاستماع</div><div className="font-medium">{scores.listening} / 20</div></div>
-              <div className="flex justify-between"><div>القراءة</div><div className="font-medium">{scores.reading} / 40</div></div>
-              <div className="flex justify-between"><div>القواعد</div><div className="font-medium">{scores.grammar} / 40</div></div>
-              <div className="flex justify-between border-t pt-3 mt-3"><div className="font-semibold">المجموع</div><div className="font-semibold">{scores.total} / 100</div></div>
-              <div className="flex justify-between"><div>النسبة</div><div className="font-medium">{scores.percentage}%</div></div>
-            </div>
-
-            {wrongAnswers.length > 0 && (
-              <div className="mt-6">
-                <h3 className="text-lg font-semibold mb-2">أسئلة أخطأت بها</h3>
-                <div className="bg-white rounded shadow p-4 border">
-                  {wrongAnswers.map((qid, i) => (
-                    <div key={qid} className="py-2 border-b last:border-b-0">خطأ #{i + 1} — معرف السؤال: {qid}</div>
-                  ))}
-                  <div className="text-sm text-slate-500 mt-2">اضغط "راجع محاولتي" لمشاهدة تفاصيل الأخطاء</div>
-                </div>
-              </div>
-            )}
-          </div>
-        </main>
+      <div className="p-6">
+        <h1 className="text-2xl font-bold mb-4">{test?.title}</h1>
+        <p className="mb-4">اكتمل الاختبار. يمكنك مراجعة محاولتك الآن.</p>
+        <div className="flex gap-3">
+          <Button onClick={() => router.push('/dashboard')} variant="outline">الرئيسية</Button>
+          <Button onClick={goToReview}>راجع محاولتي</Button>
+        </div>
       </div>
     );
   }
 
-  // واجهة الاختبار العادية (مع badges و navigation) — لا تعرض تصحيح فوري
   return (
-    <div className="min-h-screen bg-slate-50" dir="rtl">
-      <header className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900">{test?.title}</h1>
-              <p className="text-sm text-slate-600 mt-1">{currentChapter?.title}</p>
-            </div>
-            <Button onClick={() => router.push('/dashboard')} variant="outline" className="border-slate-300">
-              <Home className="w-4 h-4 ml-2" />
-              الرئيسية
-            </Button>
-          </div>
+    <div className="p-6">
+      <header className="mb-4 flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold">{test?.title}</h2>
+          <h3 className="text-slate-600">{currentChapter?.title}</h3>
+        </div>
+        <div className="flex items-center gap-2 text-slate-700">
+          <Clock className="w-5 h-5" />
+          <span className="font-semibold">{formatMMSS(chapterRemainingSecs ?? 0)}</span>
         </div>
       </header>
 
-      <div className="bg-slate-200 h-1.5">
+      <div className="bg-slate-200 h-1.5 mb-6">
         <div className="h-full bg-blue-600 transition-all" style={{ width: `${((currentChapterIndex + 1) / Math.max(chapters.length, 1)) * 100}%` }} />
       </div>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {validationError && <div className="mb-4 p-3 rounded bg-red-50 text-red-700 border border-red-200">{validationError}</div>}
+      {validationError && <div className="mb-4 p-3 rounded bg-yellow-50 text-yellow-700 border border-yellow-200">{validationError}</div>}
 
-        {/* Listening */}
-        {currentChapter?.type === 'listening' && (
+      {/* Listening */}
+      {currentChapter?.type === 'listening' && currentPiece && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white rounded-lg p-6 shadow-sm max-h-[70vh] overflow-y-auto text-left">
+            <div className="mb-4">
+              <audio
+                key={currentPiece?.id || 'audio-default'}
+                ref={(el) => { audioRef.current = el; }}
+                preload="none"
+              >
+                <source src={currentPiece.audio_url} type="audio/mpeg" />
+                متصفحك لا يدعم عناصر الصوت.
+              </audio>
+
+              {!isPlaying && (
+                <div className="mt-3">
+                  <Button onClick={handleManualPlay} className="bg-blue-600 text-white">
+                    <Volume2 className="w-4 h-4 ml-2" /> تشغيل المقطع
+                  </Button>
+                  <div className="text-sm text-slate-500 mt-2">بعد البدء لا يمكن إيقافه أو تخطيه حتى ينتهي.</div>
+                </div>
+              )}
+
+              {isLockedPlay && (
+                <div className="text-sm text-red-600 mt-3">المقطع قيد التشغيل وممنوع الإيقاف أو التخطي.</div>
+              )}
+
+              {/* مهم: لا نعرض transcript إطلاقًا */}
+            </div>
+          </div>
+
           <div>
-            {phase === 'intro' && (
-              <div className="max-w-3xl mx-auto">
-                <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-8 text-center">
-                  <Volume2 className="w-16 h-16 text-blue-600 mx-auto mb-4" />
-                  <h2 className="text-2xl font-semibold text-slate-900 mb-4">قسم الاستماع</h2>
-                  <p className="text-lg text-slate-600 mb-6">اضغط ابدأ للاستماع ثم الإجابة عن أسئلة المقطع.</p>
-                  <div className="flex justify-center gap-3">
-                    <Button onClick={() => setPhase('questions')} className="bg-blue-600 text-white px-6 py-2">ابدأ</Button>
-                    <Button onClick={() => { setCurrentChapterIndex(ci => ci + 1); setCurrentPieceIndex(0); }} variant="outline">تخطي</Button>
+            <div className="flex flex-wrap gap-2 mb-4 justify-end">
+              {currentPiece.listening_questions.map((q, qi) => {
+                const answered = !!answeredMap[q.id];
+                const marked = !!markedMap[q.id];
+                const cls = answered ? 'bg-green-600 text-white' : 'bg-slate-200 text-slate-700';
+                return (
+                  <button key={q.id} onClick={() => goToQuestionInCurrent(q.id)} className={`px-2 py-1 rounded ${cls}`}>
+                    {qi + 1}{marked && <span className="ml-2 text-xs">★</span>}
+                  </button>
+                );
+              })}
+            </div>
+
+            {currentPiece.listening_questions.map((q, i) => (
+              <div key={q.id} id={`q-${q.id}`} className="bg-white rounded-lg p-6 shadow-sm mb-3">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <p className="text-lg font-medium"><span className="text-blue-600 mr-2 font-semibold">{i + 1}.</span>{q.question_text}</p>
+                    <button type="button" onClick={() => toggleMark(q.id)} title="علامة للرجوع" className="text-yellow-600 ml-3"><Tag className={`w-4 h-4 ${markedMap[q.id] ? 'text-yellow-600' : 'text-slate-300'}`} /></button>
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  {q.options?.map((opt, oi) => (
+                    <label key={oi} className={`flex items-center p-4 border-2 rounded-md cursor-pointer ${answers[q.id] === opt ? 'border-blue-600' : 'border-slate-200'}`}>
+                      <input type="radio" name={`q-${q.id}`} value={opt} onChange={() => handleSelect(q.id, opt)} checked={answers[q.id] === opt} className="w-4 h-4 text-blue-600 mr-3" />
+                      <span className="font-medium mr-2">{String.fromCharCode(65 + oi)}.</span>
+                      <span>{opt}</span>
+                    </label>
+                  ))}
                 </div>
               </div>
+            ))}
+
+            <div className="flex justify-between mt-4">
+              <Button onClick={handlePrev} variant="outline"><ArrowLeft className="w-4 h-4 ml-2" /> السابق</Button>
+              <Button onClick={handleNext} className="bg-blue-600 text-white">التالي <ChevronRight className="w-4 h-4 ml-2" /></Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reading */}
+      {currentChapter?.type === 'reading' && currentPiece && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white rounded-lg p-6 shadow-sm max-h-[70vh] overflow-y-auto text-left">
+            <h3 className="text-xl font-bold mb-4">{currentPiece.passage_title}</h3>
+            {Array.isArray(currentPiece.passage_paragraphs) ? (
+              currentPiece.passage_paragraphs.map((para, pi) => (
+                <p key={pi} className="mb-4 leading-relaxed text-slate-700">
+                  <strong className="font-bold mr-2">{para.num}.</strong>
+                  <span>{para.text}</span>
+                </p>
+              ))
+            ) : (
+              <div className="whitespace-pre-line leading-relaxed text-slate-700">{currentPiece.passage}</div>
             )}
+          </div>
 
-            {phase === 'questions' && currentPiece && (
-              <div className="max-w-4xl mx-auto space-y-6">
-                <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
-                  <audio controls className="w-full" preload="none"><source src={currentPiece.audio_url} type="audio/mpeg" /></audio>
-                </div>
+          <div>
+            <div className="flex flex-wrap gap-2 mb-4 justify-end">
+              {currentPiece.reading_questions.map((q, idx) => {
+                const answered = !!answeredMap[q.id];
+                const marked = !!markedMap[q.id];
+                const cls = answered ? 'bg-green-600 text-white' : 'bg-slate-200 text-slate-700';
+                return (<button key={q.id} onClick={() => goToQuestionInCurrent(q.id)} className={`px-2 py-1 rounded ${cls}`}>{idx + 1}{marked && <span className="ml-2 text-xs">★</span>}</button>);
+              })}
+            </div>
 
-                <div className="flex flex-wrap gap-2">
-                  {currentPiece.listening_questions.map((q, qi) => {
-                    const answered = !!answeredMap[q.id];
-                    const cls = answered ? 'bg-green-600 text-white' : 'bg-slate-200 text-slate-700';
-                    return (<button key={q.id} onClick={() => goToQuestionInCurrent(q.id)} className={`px-2 py-1 rounded ${cls}`}>{qi + 1}</button>);
-                  })}
-                </div>
-
-                {currentPiece.listening_questions.map((q, i) => (
-                  <div key={q.id} id={`q-${q.id}`} className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
-                    <div className="flex items-start justify-between mb-4">
-                      <p className="text-lg font-medium text-slate-900 flex-1"><span className="text-blue-600 font-semibold mr-2">{i + 1}.</span>{q.question_text}</p>
-                      <button onClick={() => setActiveHintQuestion(q)} className="text-slate-500 hover:text-blue-600"><Lightbulb className="w-5 h-5" /></button>
-                    </div>
-
-                    <div className="space-y-2">
-                      {q.options.map((opt, oi) => (
-                        <label key={oi} className={`flex items-center p-4 border-2 rounded-md cursor-pointer ${answers[q.id] === opt ? 'border-blue-600' : 'border-slate-200'}`}>
-                          <input type="radio" name={`q-${q.id}`} value={opt} onChange={() => handleSelect(q.id, opt)} checked={answers[q.id] === opt} className="w-4 h-4 text-blue-600 mr-3" />
-                          <span className="font-medium text-slate-700 mr-2">{String.fromCharCode(65 + oi)}.</span>
-                          <span className="text-slate-700">{opt}</span>
-                        </label>
-                      ))}
-                    </div>
+            {currentPiece.reading_questions.map((q, qi) => (
+              <div key={q.id} id={`q-${q.id}`} className="bg-white rounded-lg p-6 shadow-sm mb-3">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <p className="text-lg font-medium"><span className="text-emerald-600 mr-2 font-semibold">{qi + 1}.</span>{q.question_text}</p>
+                    <button type="button" onClick={() => toggleMark(q.id)} title="علامة للرجوع" className="text-yellow-600 ml-3"><Tag className={`w-4 h-4 ${markedMap[q.id] ? 'text-yellow-600' : 'text-slate-300'}`} /></button>
                   </div>
-                ))}
+                </div>
 
-                <div className="flex justify-between mt-4">
+                <div className="space-y-2">
+                  {q.options?.map((opt, oi) => (
+                    <label key={oi} className={`flex items-center p-4 border-2 rounded-md cursor-pointer ${answers[q.id] === opt ? 'border-emerald-600' : 'border-slate-200'}`}>
+                      <input type="radio" name={`q-${q.id}`} value={opt} onChange={() => handleSelect(q.id, opt)} checked={answers[q.id] === opt} className="w-4 h-4 text-emerald-600 mr-3" />
+                      <span className="font-medium mr-2">{String.fromCharCode(65 + oi)}.</span>
+                      <span>{opt}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            <div className="flex justify-between mt-4">
+              <Button onClick={handlePrev} variant="outline"><ArrowLeft className="w-4 h-4 ml-2" /> السابق</Button>
+              <Button onClick={handleNext} className="bg-emerald-600 text-white">التالي <ChevronRight className="w-4 h-4 ml-2" /></Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Grammar */}
+      {currentChapter?.type === 'grammar' && (
+        <div className="max-w-3xl mx-auto">
+          {(() => {
+            const q = currentChapter.questions?.[currentPieceIndex];
+            if (!q) return null;
+            const marked = !!markedMap[q.id];
+
+            return (
+              <div className="bg-white rounded-lg p-8 shadow-sm">
+                <div className="flex items-start justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <p className="text-xl font-medium"><span className="text-slate-600 font-semibold mr-2">سؤال {currentPieceIndex + 1} من {currentChapter.questions.length}</span></p>
+                    <button type="button" onClick={() => toggleMark(q.id)} className="text-yellow-600 ml-3" title="علامة للرجوع"><Tag className={`w-4 h-4 ${marked ? 'text-yellow-600' : 'text-slate-300'}`} /></button>
+                  </div>
+                </div>
+
+                {/* Underlines لو موجود */}
+                {((Array.isArray(q.underlined_words) && q.underlined_words.length > 0) ||
+                  (Array.isArray(q.underlined_positions) && q.underlined_positions.length > 0)) && q.base_text && (
+                  <div className="mb-4 text-slate-700">
+                    {/* عرض بسيط للنص الأساسي؛ إذا تحتاج عرض دقيق بالمواقع أقدر أضيفه */}
+                    <div className="font-semibold mb-2">النص:</div>
+                    <div className="text-slate-800 whitespace-pre-line">{q.base_text}</div>
+                  </div>
+                )}
+
+                <p className="text-lg text-slate-900 mb-6 leading-relaxed">{q.question_text}</p>
+
+                <div className="space-y-3">
+                  {q.options?.map((opt, oi) => (
+                    <label key={oi} className={`flex items-center p-4 border-2 rounded-md cursor-pointer ${answers[q.id] === opt ? 'border-slate-600' : 'border-slate-200'}`}>
+                      <input type="radio" name={`q-${q.id}`} value={opt} onChange={() => handleSelect(q.id, opt)} checked={answers[q.id] === opt} className="w-4 h-4 text-slate-600 mr-3" />
+                      <span className="font-medium mr-2">{String.fromCharCode(65 + oi)}.</span>
+                      <span>{opt}</span>
+                    </label>
+                  ))}
+                </div>
+
+                <div className="mt-8 flex justify-between">
                   <Button onClick={handlePrev} variant="outline"><ArrowLeft className="w-4 h-4 ml-2" /> السابق</Button>
-                  <Button onClick={handleNext} className="bg-blue-600 text-white">التالي <ChevronRight className="w-4 h-4 ml-2" /></Button>
+                  <Button onClick={handleNext} className="bg-slate-600 text-white">{currentPieceIndex < currentChapter.questions.length - 1 ? 'التالي' : 'إنهاء الفصل'} <ChevronRight className="w-4 h-4 ml-2" /></Button>
                 </div>
               </div>
-            )}
-          </div>
-        )}
-
-        {/* Reading */}
-        {currentChapter?.type === 'reading' && currentPiece && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 max-h-[70vh] overflow-y-auto">
-              <h3 className="text-xl font-bold text-slate-900 mb-4">{currentPiece.passage_title}</h3>
-              <div className="text-slate-700 leading-relaxed whitespace-pre-line">{currentPiece.passage}</div>
-            </div>
-
-            <div>
-              <div className="flex flex-wrap gap-2 mb-4">
-                {currentPiece.reading_questions.map((q, idx) => {
-                  const answered = !!answeredMap[q.id];
-                  const cls = answered ? 'bg-green-600 text-white' : 'bg-slate-200 text-slate-700';
-                  return (<button key={q.id} onClick={() => goToQuestionInCurrent(q.id)} className={`px-2 py-1 rounded ${cls}`}>{idx + 1}</button>);
-                })}
-              </div>
-
-              {currentPiece.reading_questions.map((q, qi) => (
-                <div key={q.id} id={`q-${q.id}`} className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-3">
-                  <div className="flex items-start justify-between mb-4">
-                    <p className="text-lg font-medium text-slate-900 flex-1"><span className="text-emerald-600 font-semibold mr-2">{qi + 1}.</span>{q.question_text}</p>
-                    <button onClick={() => setActiveHintQuestion(q)} className="text-slate-500 hover:text-emerald-600 ml-4"><Lightbulb className="w-5 h-5" /></button>
-                  </div>
-
-                  <div className="space-y-2">
-                    {q.options.map((opt, oi) => (
-                      <label key={oi} className={`flex items-center p-4 border-2 rounded-md cursor-pointer ${answers[q.id] === opt ? 'border-emerald-600' : 'border-slate-200'}`}>
-                        <input type="radio" name={`q-${q.id}`} value={opt} onChange={() => handleSelect(q.id, opt)} checked={answers[q.id] === opt} className="w-4 h-4 text-emerald-600 mr-3" />
-                        <span className="font-medium text-slate-700 mr-2">{String.fromCharCode(65 + oi)}.</span>
-                        <span className="text-slate-700">{opt}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              ))}
-
-              <div className="flex justify-between mt-4">
-                <Button onClick={handlePrev} variant="outline"><ArrowLeft className="w-4 h-4 ml-2" /> السابق</Button>
-                <Button onClick={handleNext} className="bg-emerald-600 text-white">التالي <ChevronRight className="w-4 h-4 ml-2" /></Button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Grammar */}
-        {currentChapter?.type === 'grammar' && (
-          <div className="max-w-3xl mx-auto">
-            {(() => {
-              const q = currentChapter.questions[currentPieceIndex];
-              if (!q) return null;
-              return (
-                <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-8">
-                  <div className="flex items-start justify-between mb-6">
-                    <p className="text-xl font-medium text-slate-900 flex-1"><span className="text-slate-600 font-semibold mr-2">سؤال {currentPieceIndex + 1} من {currentChapter.questions.length}</span></p>
-                    <button onClick={() => setActiveHintQuestion(q)} className="text-slate-500 hover:text-slate-700 ml-4"><Lightbulb className="w-5 h-5" /></button>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {currentChapter.questions.map((qq, idx) => {
-                      const answered2 = !!answeredMap[qq.id];
-                      const cls2 = answered2 ? 'bg-green-600 text-white' : 'bg-slate-200 text-slate-700';
-                      return <button key={qq.id} onClick={() => { setCurrentPieceIndex(idx); goToQuestionInCurrent(qq.id); }} className={`px-2 py-1 rounded ${cls2}`}>{idx + 1}</button>;
-                    })}
-                  </div>
-
-                  <p className="text-lg text-slate-900 mb-6 leading-relaxed">{q.question_text}</p>
-
-                  <div className="space-y-3">
-                    {q.options.map((opt, oi) => (
-                      <label key={oi} className={`flex items-center p-4 border-2 rounded-md cursor-pointer ${answers[q.id] === opt ? 'border-slate-600' : 'border-slate-200'}`}>
-                        <input type="radio" name={`q-${q.id}`} value={opt} onChange={() => handleSelect(q.id, opt)} checked={answers[q.id] === opt} className="w-4 h-4 text-slate-600 mr-3" />
-                        <span className="font-medium text-slate-700 mr-2">{String.fromCharCode(65 + oi)}.</span>
-                        <span className="text-slate-700">{opt}</span>
-                      </label>
-                    ))}
-                  </div>
-
-                  <div className="mt-8 flex justify-between">
-                    <Button onClick={handlePrev} variant="outline"><ArrowLeft className="w-4 h-4 ml-2" /> السابق</Button>
-                    <Button onClick={handleNext} className="bg-slate-600 text-white">{currentPieceIndex < currentChapter.questions.length - 1 ? 'التالي' : 'إنهاء الاختبار'}<ChevronRight className="w-4 h-4 ml-2" /></Button>
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
-        )}
-      </main>
-
-      {activeHintQuestion && <HintModal question={activeHintQuestion} onClose={() => setActiveHintQuestion(null)} />}
+            );
+          })()}
+        </div>
+      )}
     </div>
   );
 }
