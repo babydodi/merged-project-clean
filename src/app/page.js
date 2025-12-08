@@ -7,9 +7,9 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Check, BookOpen, Brain, Trophy, ArrowRight, Target, Clock, Star, Zap } from 'lucide-react'
+import { Check, BookOpen, Brain, Trophy, ArrowRight, Target, Star, Zap } from 'lucide-react'
 
-/* ميزات الصفحة مع أيقونات ونصوص ثنائية اللغة */
+/* الميزات مع أيقونات ونصوص ثنائية اللغة */
 const featuresData = [
   {
     icon: BookOpen,
@@ -74,17 +74,22 @@ const plans = [
 export default function Landing2() {
   const [isSignUpOpen, setIsSignUpOpen] = useState(false)
   const [formData, setFormData] = useState({ name: '', email: '', password: '', plan: 'basic' })
-  const [dialogMode, setDialogMode] = useState('signup') // 'signup' = بدون خطط, 'trial' = مع الخطط
-  const containerRef = useRef(null)
+  const [dialogMode, setDialogMode] = useState<'signup' | 'trial'>('signup') // 'signup' = بدون خطط, 'trial' = مع الخطط
+  const containerRef = useRef<HTMLDivElement | null>(null)
 
   const { scrollYProgress } = useScroll({ target: containerRef, offset: ['start start', 'end end'] })
   const opacity = useTransform(scrollYProgress, [0, 0.2], [1, 0])
   const scale = useTransform(scrollYProgress, [0, 0.2], [1, 0.95])
 
-  const handleSubmit = async (e) => {
+  const openDialog = (mode: 'signup' | 'trial', presetPlan?: string) => {
+    if (presetPlan) setFormData((prev) => ({ ...prev, plan: presetPlan }))
+    setDialogMode(mode)
+    setIsSignUpOpen(true)
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     console.log('Form submitted:', formData)
-    // هنا يمكنك استبدال السلوك بإرسال بيانات إلى الباك إند
     window.location.href = '/dashboard'
   }
 
@@ -108,22 +113,17 @@ export default function Landing2() {
             </div>
           </motion.div>
 
-          <div className="flex items-center gap-3">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
-              <Button
-                onClick={() => {
-                  setDialogMode('signup') // افتح بدون خطط
-                  setIsSignUpOpen(true)
-                }}
-                className="bg-white text-black hover:bg-gray-200 transition-colors"
-              >
-                <div className="flex flex-col md:flex-row md:items-center md:gap-2">
-                  <span>Get Started</span>
-                  <span className="text-sm text-gray-600"> / ابدأ الآن</span>
-                </div>
-              </Button>
-            </motion.div>
-          </div>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
+            <Button
+              onClick={() => openDialog('signup')}
+              className="bg-white text-black hover:bg-gray-200 transition-colors"
+            >
+              <div className="flex flex-col md:flex-row md:items-center md:gap-2">
+                <span>Get Started</span>
+                <span className="text-sm text-gray-600"> / ابدأ الآن</span>
+              </div>
+            </Button>
+          </motion.div>
         </div>
       </motion.nav>
 
@@ -149,7 +149,7 @@ export default function Landing2() {
               <span className="text-sm text-gray-400">Professional Test Preparation / تحضير احترافي للاختبارات</span>
             </motion.div>
 
-            {/* العنوان بالإنجليزية فقط كما طلبت */}
+            {/* English-only hero heading */}
             <motion.h1 initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.4 }} className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
               <span className="text-white">Master the STEP English Test</span>
             </motion.h1>
@@ -164,10 +164,7 @@ export default function Landing2() {
             <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.8 }} className="flex gap-4 justify-center flex-wrap">
               <Button
                 size="lg"
-                onClick={() => {
-                  setDialogMode('signup') // افتح بدون خطط
-                  setIsSignUpOpen(true)
-                }}
+                onClick={() => openDialog('signup')}
                 className="bg-white text-black hover:bg-gray-200 transition-all transform hover:scale-105 text-lg px-8 py-6"
               >
                 <div className="flex flex-col md:flex-row md:items-center md:gap-2">
@@ -181,7 +178,7 @@ export default function Landing2() {
                 size="lg"
                 variant="outline"
                 className="border-[#2a2a2a] text-white hover:bg-[#1a1a1a] text-lg px-8 py-6"
-                onClick={() => document.getElementById('pricing').scrollIntoView({ behavior: 'smooth' })}
+                onClick={() => document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' })}
               >
                 <div className="flex flex-col md:flex-row md:items-center md:gap-2">
                   <span>View Pricing</span>
@@ -350,11 +347,7 @@ export default function Landing2() {
                     <Button
                       className={`w-full transition-all transform hover:scale-105 ${plan.popular ? 'bg-black text-white hover:bg-gray-900' : 'bg-white text-black hover:bg-gray-200'}`}
                       size="lg"
-                      onClick={() => {
-                        setFormData({ ...formData, plan: plan.name })
-                        setDialogMode('trial') // نعرض الخطط داخل الـ dialog
-                        setIsSignUpOpen(true)
-                      }}
+                      onClick={() => openDialog('trial', plan.name)}
                     >
                       <div className="flex flex-col md:flex-row md:items-center md:gap-2">
                         <span>Get Started</span>
@@ -386,10 +379,7 @@ export default function Landing2() {
               <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.4 }} viewport={{ once: true }}>
                 <Button
                   size="lg"
-                  onClick={() => {
-                    setDialogMode('trial')
-                    setIsSignUpOpen(true)
-                  }}
+                  onClick={() => openDialog('trial')}
                   className="bg-black text-white hover:bg-gray-900 transition-all transform hover:scale-105 text-lg px-10 py-6"
                 >
                   <div className="flex flex-col md:flex-row md:items-center md:gap-2">
