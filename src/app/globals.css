@@ -1,6 +1,20 @@
 @import "tailwindcss";
 
-/* تعريف خط Minecraft */
+/* أساسيات عامة آمنة */
+html, body, #__next {
+  height: 100%;
+}
+
+body {
+  font-family: 'Tajawal', Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  background-color: #0a0a0a;
+  color: #ffffff;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  margin: 0;
+}
+
+/* خط Minecraft (إن أردت الاحتفاظ به) */
 @font-face {
   font-family: 'Minecraft';
   src: url('/fonts/Minecraft.ttf') format('truetype');
@@ -8,46 +22,24 @@
   font-style: normal;
 }
 
-/* مثال: لو تبغى تستخدمه في body */
-body {
-  font-family: 'Tajawal', sans-serif;
+/* أدوات مفيدة لا تكسر التصميم العام */
+html { scroll-behavior: smooth; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.06);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
-.App {
-  text-align: center;
-}
-
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
-}
-
+/* أمثلة محفوظة من ملفك الأصلي */
+.App { text-align: center; }
+.App-logo { height: 40vmin; pointer-events: none; }
 @media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
+  .App-logo { animation: App-logo-spin infinite 20s linear; }
 }
+@keyframes App-logo-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
-}
-
-.App-link {
-  color: #61dafb;
-}
-
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* دعم RTL */
+html[dir="rtl"] { direction: rtl; }
