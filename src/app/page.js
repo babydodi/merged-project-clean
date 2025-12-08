@@ -1,7 +1,6 @@
 'use client'
 
-import { useState } from 'react'
-import { useRef } from 'react'
+import { useState, useRef } from 'react'
 import { motion, useScroll, useTransform } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
@@ -9,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Check, BookOpen, Brain, Trophy, ArrowRight, Target, Clock, Star, Zap } from 'lucide-react'
-import { supabase } from '@/lib/supabaseClient'
+import { useSupabaseClient } from '@supabase/auth-helpers-react'
 
 export default function Landing2() {
   const [isSignUpOpen, setIsSignUpOpen] = useState(false)
@@ -21,6 +20,7 @@ export default function Landing2() {
   })
   const [showPlansInDialog, setShowPlansInDialog] = useState(false)
   const containerRef = useRef(null)
+  const supabase = useSupabaseClient()
 
   const { scrollYProgress } = useScroll({ target: containerRef, offset: ['start start', 'end end'] })
 
@@ -57,7 +57,7 @@ export default function Landing2() {
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
           <Button
             onClick={() => {
-              // Open Form 1 (without plans)
+              // Form 1 (without plans)
               setShowPlansInDialog(false)
               setIsSignUpOpen(true)
             }}
@@ -127,7 +127,7 @@ export default function Landing2() {
               <Button
                 size="lg"
                 onClick={() => {
-                  // Open Form 1 (without plans)
+                  // Form 1 (without plans)
                   setShowPlansInDialog(false)
                   setIsSignUpOpen(true)
                 }}
@@ -446,7 +446,7 @@ export default function Landing2() {
                       className={`w-full transition-all transform hover:scale-105 ${plan.popular ? 'bg-black text-white hover:bg-gray-900' : 'bg-white text-black hover:bg-gray-200'}`}
                       size="lg"
                       onClick={() => {
-                        // Open Form 2 (with plans) when clicking Get Started inside pricing cards
+                        // Form 2 (with plans) when clicking Get Started inside pricing cards
                         setFormData({ ...formData, plan: plan.name.toLowerCase() })
                         setShowPlansInDialog(true)
                         setIsSignUpOpen(true)
@@ -503,7 +503,7 @@ export default function Landing2() {
                 <Button
                   size="lg"
                   onClick={() => {
-                    // Open Form 2 (with plans) for CTA big Start Preparing Today
+                    // Form 2 (with plans) for CTA big Start Preparing Today
                     setShowPlansInDialog(true)
                     setIsSignUpOpen(true)
                   }}
@@ -586,7 +586,6 @@ export default function Landing2() {
               />
             </div>
 
-            {/* Show plans only when showPlansInDialog === true */}
             {showPlansInDialog && (
               <div className="space-y-2">
                 <Label className="text-white">Selected Plan</Label>
