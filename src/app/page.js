@@ -7,11 +7,9 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Check, BookOpen, Brain, Trophy, ArrowRight, Target, Star, Zap } from 'lucide-react'
+import { Check, BookOpen, Brain, Trophy, ArrowRight, Target, Star, Zap, Clock } from 'lucide-react'
 
-/* الميزات مع أيقونات ونصوص ثنائية اللغة */
-console.log('Button', Button, 'Dialog', Dialog, 'Card', Card)
-
+/* Features with icons (safe, all have icon) */
 const featuresData = [
   {
     icon: BookOpen,
@@ -36,7 +34,7 @@ const featuresData = [
   }
 ]
 
-/* الخطط مع ميزات ثنائية اللغة (EN + AR) */
+/* Plans with bilingual features */
 const plans = [
   {
     name: 'basic',
@@ -131,6 +129,7 @@ export default function Landing2() {
 
       {/* Hero Section */}
       <motion.section style={{ opacity, scale }} className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20">
+        {/* Background grid */}
         <div className="absolute inset-0 overflow-hidden">
           <div
             className="absolute inset-0"
@@ -191,6 +190,7 @@ export default function Landing2() {
           </div>
         </div>
 
+        {/* Scroll indicator */}
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.5, duration: 1 }} className="absolute bottom-10 left-1/2 transform -translate-x-1/2">
           <motion.div animate={{ y: [0, 10, 0] }} transition={{ duration: 2, repeat: Infinity }} className="w-6 h-10 border-2 border-[#2a2a2a] rounded-full flex justify-center pt-2">
             <motion.div className="w-1.5 h-1.5 bg-white rounded-full" animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 2, repeat: Infinity }} />
@@ -208,11 +208,18 @@ export default function Landing2() {
 
           <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
             {featuresData.map((feature, index) => (
-              <motion.div key={index} initial={{ opacity: 0, y: 50 }} whileInView={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.2 + index * 0.2 }} viewport={{ once: true }} whileHover={{ y: -10, transition: { duration: 0.3 } }}>
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, y: 50 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.2 + index * 0.2 }}
+                viewport={{ once: true }}
+                whileHover={{ y: -10, transition: { duration: 0.3 } }}
+              >
                 <Card className="bg-[#141414] border-[#2a2a2a] hover:border-white transition-all duration-300 h-full">
                   <CardHeader>
                     <motion.div whileHover={{ rotate: 360, scale: 1.1 }} transition={{ duration: 0.6 }} className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mb-4">
-                      <feature.icon className="w-8 h-8 text-black" />
+                      {feature.icon && <feature.icon className="w-8 h-8 text-black" />}
                     </motion.div>
                     <CardTitle className="text-2xl text-white">
                       <div className="flex flex-col">
@@ -298,7 +305,14 @@ export default function Landing2() {
 
           <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
             {plans.map((plan) => (
-              <motion.div key={plan.name} initial={{ opacity: 0, y: 50 }} whileInView={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: plan.delay }} viewport={{ once: true }} whileHover={{ scale: 1.05, transition: { duration: 0.3 } }}>
+              <motion.div
+                key={plan.name}
+                initial={{ opacity: 0, y: 50 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: plan.delay }}
+                viewport={{ once: true }}
+                whileHover={{ scale: 1.05, transition: { duration: 0.3 } }}
+              >
                 <Card className={`relative overflow-hidden h-full ${plan.popular ? 'bg-white border-white' : 'bg-[#141414] border-[#2a2a2a]'}`}>
                   {plan.popular && (
                     <div className="absolute top-0 right-0">
@@ -331,7 +345,14 @@ export default function Landing2() {
                   <CardContent className="pt-6">
                     <ul className="space-y-4">
                       {plan.features.map((feature, idx) => (
-                        <motion.li key={idx} initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} transition={{ duration: 0.4, delay: plan.delay + 0.1 * idx }} viewport={{ once: true }} className="flex items-start gap-3">
+                        <motion.li
+                          key={idx}
+                          initial={{ opacity: 0, x: -20 }}
+                          whileInView={{ opacity: 1, x: 0 }}
+                          transition={{ duration: 0.4, delay: plan.delay + 0.1 * idx }}
+                          viewport={{ once: true }}
+                          className="flex items-start gap-3"
+                        >
                           <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center mt-0.5 ${plan.popular ? 'bg-black' : 'bg-white'}`}>
                             <Check className={`w-4 h-4 ${plan.popular ? 'text-white' : 'text-black'}`} />
                           </div>
@@ -408,7 +429,7 @@ export default function Landing2() {
 
       {/* Sign Up Dialog */}
       <Dialog open={isSignUpOpen} onOpenChange={setIsSignUpOpen}>
-        <DialogContent className="bg-[#141414] border-[#2a2a2a] text-white z-60 relative">
+        <DialogContent className="bg-[#141414] border-[#2a2a2a] text-white">
           <DialogHeader>
             <DialogTitle className="text-2xl text-white">Start Your Journey / ابدأ رحلتك</DialogTitle>
             <DialogDescription className="text-gray-400">Sign up now and begin your STEP test preparation / سجّل الآن وابدأ تحضيرك لاختبار STEP</DialogDescription>
@@ -417,7 +438,7 @@ export default function Landing2() {
           <form onSubmit={handleSubmit} className="space-y-6 mt-4">
             {dialogMode === 'trial' && (
               <div className="bg-[#0b0b0b] p-4 rounded-md border border-[#2a2a2a] text-gray-200">
-                <div>Try the trial test before subscribing. After signup you will be redirected to the dashboard (no payment). / جرب الاختبار التجريبي قبل ما تشترك. بعد التسجيل ستنتقل للداشبورد (بدون دفع).</div>
+                جرب الاختبار التجريبي قبل ما تشترك — بعد التسجيل ستنتقل للداشبورد (بدون دفع).
               </div>
             )}
 
