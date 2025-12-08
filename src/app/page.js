@@ -74,20 +74,20 @@ const plans = [
 export default function Landing2() {
   const [isSignUpOpen, setIsSignUpOpen] = useState(false)
   const [formData, setFormData] = useState({ name: '', email: '', password: '', plan: 'basic' })
-  const [dialogMode, setDialogMode] = useState<'signup' | 'trial'>('signup') // 'signup' = بدون خطط, 'trial' = مع الخطط
-  const containerRef = useRef<HTMLDivElement | null>(null)
+  const [dialogMode, setDialogMode] = useState('signup') // 'signup' = بدون خطط, 'trial' = مع الخطط
+  const containerRef = useRef(null)
 
   const { scrollYProgress } = useScroll({ target: containerRef, offset: ['start start', 'end end'] })
   const opacity = useTransform(scrollYProgress, [0, 0.2], [1, 0])
   const scale = useTransform(scrollYProgress, [0, 0.2], [1, 0.95])
 
-  const openDialog = (mode: 'signup' | 'trial', presetPlan?: string) => {
+  const openDialog = (mode, presetPlan) => {
     if (presetPlan) setFormData((prev) => ({ ...prev, plan: presetPlan }))
     setDialogMode(mode)
     setIsSignUpOpen(true)
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     console.log('Form submitted:', formData)
     window.location.href = '/dashboard'
