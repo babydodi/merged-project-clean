@@ -10,6 +10,8 @@ import { Label } from '@/components/ui/label'
 import { Check, BookOpen, Brain, Trophy, ArrowRight, Target, Star, Zap } from 'lucide-react'
 
 /* الميزات مع أيقونات ونصوص ثنائية اللغة */
+console.log('Button', Button, 'Dialog', Dialog, 'Card', Card)
+
 const featuresData = [
   {
     icon: BookOpen,
