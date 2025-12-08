@@ -355,7 +355,8 @@ export default function Landing2() {
           <form onSubmit={handleSubmit} className="space-y-6 mt-4">
             {dialogMode === 'trial' && (
               <div className="bg-[#0b0b0b] p-4 rounded-md border border-[#2a2a2a] text-gray-200">
-                - بعد التسجيل راح تدخل الداشبورد و تختبر وو تشترك بجرب الاختبار التجريبي قبل ماتشترك
+                جرب الاختبار التجريبي قبل ماتشترك
+             بعد التسجيل راح تنتقل للداشبورد وليس الدفع
               </div>
             )}
 
