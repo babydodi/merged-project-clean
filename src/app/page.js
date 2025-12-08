@@ -5,48 +5,75 @@ import { motion, useScroll, useTransform } from 'framer-motion'
 import { useSupabaseClient } from '@supabase/auth-helpers-react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Check, BookOpen, Brain, Trophy, ArrowRight, Target, Clock, Star, Zap } from 'lucide-react'
+import {
+  Check,
+  BookOpen,
+  Brain,
+  Trophy,
+  ArrowRight,
+  Target,
+  Clock,
+  Star,
+  Zap,
+} from 'lucide-react'
 
 export default function Landing2() {
   const supabase = useSupabaseClient()
   const router = useRouter()
 
+  // Dialog control
   const [isSignUpOpen, setIsSignUpOpen] = useState(false)
-  const [showPlansInDialog, setShowPlansInDialog] = useState(true)
-  const [dialogNote, setDialogNote] = useState('') // message shown above form when dialog opens
+  const [showPlansInDialog, setShowPlansInDialog] = useState(false)
+  const [dialogNote, setDialogNote] = useState('')
+
+  // form
   const [formData, setFormData] = useState({ name: '', email: '', password: '', plan: 'basic' })
   const [loadingSubmit, setLoadingSubmit] = useState(false)
   const [submitError, setSubmitError] = useState('')
 
+  // scroll animations
   const containerRef = useRef(null)
   const { scrollYProgress } = useScroll({ target: containerRef, offset: ['start start', 'end end'] })
   const opacity = useTransform(scrollYProgress, [0, 0.2], [1, 0])
   const scale = useTransform(scrollYProgress, [0, 0.2], [1, 0.95])
 
-  const openDialog = ({ withPlans = true, note = '' } = {}) => {
+  // open dialog helper
+  const openDialog = ({ withPlans = false, note = '' } = {}) => {
     setShowPlansInDialog(withPlans)
     setDialogNote(note)
     setIsSignUpOpen(true)
   }
 
+  // submit handler: register user, then redirect to dashboard (subscription happens there)
   const handleSubmit = async (e) => {
     e.preventDefault()
     setSubmitError('')
     setLoadingSubmit(true)
 
-    // Basic client-side validation
     if (!formData.name || !formData.email || !formData.password) {
-      setSubmitError('Please fill all required fields / الرجاء تعبئة جميع الحقول')
+      setSubmitError('الرجاء تعبئة جميع الحقول المطلوبة')
       setLoadingSubmit(false)
       return
     }
 
     try {
-      // Use Supabase signUp to register the user
       const { data, error } = await supabase.auth.signUp(
         {
           email: formData.email,
@@ -60,18 +87,14 @@ export default function Landing2() {
         }
       )
 
-      if (error) {
-        throw error
-      }
+      if (error) throw error
 
-      // If signUp returns a user or requires email confirmation, redirect to dashboard or show message
-      // Here we redirect to dashboard after successful sign up
+      // Close dialog and redirect to dashboard (user can subscribe there)
       setIsSignUpOpen(false)
-      // If you prefer client-side navigation:
       router.push('/dashboard')
     } catch (err) {
       console.error('signup error', err)
-      setSubmitError(err?.message || 'Registration failed / فشل التسجيل')
+      setSubmitError(err?.message || 'فشل التسجيل، حاول مرة أخرى')
     } finally {
       setLoadingSubmit(false)
     }
@@ -92,7 +115,7 @@ export default function Landing2() {
           </motion.div>
 
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
-            {/* Get Started: open dialog WITHOUT plans */}
+            {/* Get Started: opens dialog WITHOUT plans */}
             <Button onClick={() => openDialog({ withPlans: false })} className="bg-white text-black hover:bg-gray-200 transition-colors">
               Get Started
             </Button>
@@ -101,10 +124,7 @@ export default function Landing2() {
       </motion.nav>
 
       {/* Hero Section */}
-      <motion.section
-        style={{ opacity, scale }}
-        className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20"
-      >
+      <motion.section style={{ opacity, scale }} className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20">
         {/* Animated background grid */}
         <div className="absolute inset-0 overflow-hidden">
           <div
@@ -121,60 +141,40 @@ export default function Landing2() {
 
         <div className="container mx-auto px-6 relative z-10">
           <div className="max-w-4xl mx-auto text-center">
-            <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.2 }}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#1a1a1a] border border-[#2a2a2a] mb-6"
-            >
+            <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.2 }} className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#1a1a1a] border border-[#2a2a2a] mb-6">
               <Star className="w-4 h-4 text-white" />
               <span className="text-sm text-gray-400">Professional Test Preparation</span>
             </motion.div>
 
-            <motion.h1
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.4 }}
-              className="text-5xl md:text-7xl font-bold mb-6 leading-tight"
-            >
+            <motion.h1 initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.4 }} className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
               <span className="text-white">Master the </span>
               <span className="text-white border-b-4 border-white pb-2">STEP English Test</span>
             </motion.h1>
 
-            <motion.p
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.6 }}
-              className="text-xl text-gray-400 mb-10 max-w-2xl mx-auto leading-relaxed"
-            >
+            <motion.p initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.6 }} className="text-xl text-gray-400 mb-10 max-w-2xl mx-auto leading-relaxed">
               Experience a real test simulator with detailed explanations for every question.
               Prepare with confidence and achieve your target score.
             </motion.p>
 
-            <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.8 }}
-              className="flex gap-4 justify-center flex-wrap"
-            >
-              {/* Start Your Journey: open dialog WITHOUT plans */}
+            <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.8 }} className="flex gap-4 justify-center flex-wrap">
+              {/* Start Preparing: open dialog WITHOUT plans (form 1) */}
               <Button
                 size="lg"
                 onClick={() => openDialog({ withPlans: false })}
                 className="bg-white text-black hover:bg-gray-200 transition-all transform hover:scale-105 text-lg px-8 py-6"
               >
-                Start Your Journey
+                Start Preparing
                 <ArrowRight className="ml-2 w-5 h-5" />
               </Button>
 
-              {/* Start Preparing: open dialog WITH plans and show note */}
+              {/* Start Preparing Today: open dialog WITH plans (form 2) */}
               <Button
                 size="lg"
                 variant="outline"
                 className="border-[#2a2a2a] text-white hover:bg-[#1a1a1a] text-lg px-8 py-6"
                 onClick={() => openDialog({ withPlans: true, note: 'جرب الاختبار التجريبي قبل ماتشترك' })}
               >
-                Start Preparing
+                Start Preparing Today
               </Button>
             </motion.div>
           </div>
@@ -217,14 +217,7 @@ export default function Landing2() {
                 delay: 0.6,
               },
             ].map((feature, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, y: 50 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: feature.delay }}
-                viewport={{ once: true }}
-                whileHover={{ y: -10, transition: { duration: 0.3 } }}
-              >
+              <motion.div key={index} initial={{ opacity: 0, y: 50 }} whileInView={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: feature.delay }} viewport={{ once: true }} whileHover={{ y: -10, transition: { duration: 0.3 } }}>
                 <Card className="bg-[#141414] border-[#2a2a2a] hover:border-white transition-all duration-300 h-full">
                   <CardHeader>
                     <motion.div whileHover={{ rotate: 360, scale: 1.1 }} transition={{ duration: 0.6 }} className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mb-4">
@@ -306,7 +299,7 @@ export default function Landing2() {
                       className={`w-full transition-all transform hover:scale-105 ${plan.popular ? 'bg-black text-white hover:bg-gray-900' : 'bg-white text-black hover:bg-gray-200'}`}
                       size="lg"
                       onClick={() => {
-                        // When user clicks Get Started on a pricing card, open dialog WITH plans and preselect this plan
+                        // open dialog WITH plans and preselect plan
                         setFormData({ ...formData, plan: plan.name.toLowerCase() })
                         openDialog({ withPlans: true, note: 'جرب الاختبار التجريبي قبل ماتشترك' })
                       }}
@@ -336,7 +329,7 @@ export default function Landing2() {
               </motion.p>
 
               <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.4 }} viewport={{ once: true }}>
-                {/* Start Preparing here opens dialog WITH plans and note */}
+                {/* This CTA opens dialog WITH plans (form 2) */}
                 <Button size="lg" onClick={() => openDialog({ withPlans: true, note: 'جرب الاختبار التجريبي قبل ماتشترك' })} className="bg-black text-white hover:bg-gray-900 transition-all transform hover:scale-105 text-lg px-10 py-6">
                   Start Preparing Today
                   <Zap className="ml-2 w-5 h-5" />
@@ -366,7 +359,7 @@ export default function Landing2() {
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="space-y-6 mt-4">
-            {/* Optional note shown when opening with plans or from CTA */}
+            {/* show note when present */}
             {dialogNote && <div className="text-sm text-yellow-300">{dialogNote}</div>}
 
             <div className="space-y-2">
