@@ -16,6 +16,7 @@ export default function Landing2() {
   const containerRef = useRef(null)
 
   const { scrollYProgress } = useScroll({ target: containerRef, offset: ['start start', 'end end'] })
+
   const opacity = useTransform(scrollYProgress, [0, 0.2], [1, 0])
   const scale = useTransform(scrollYProgress, [0, 0.2], [1, 0.95])
 
@@ -28,54 +29,88 @@ export default function Landing2() {
   return (
     <div ref={containerRef}>
       {/* Navigation */}
-      <motion.nav initial={{ y: -100 }} animate={{ y: 0 }} transition={{ duration: 0.6, ease: 'easeOut' }} className="fixed top-0 w-full z-50 bg-[#0a0a0a]/80 backdrop-blur-lg border-b border-[#2a2a2a]">
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} className="text-2xl font-bold text-white">
-          STEP Online
-        </motion.div>
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
-          <Button
-            onClick={() => {
-              setDialogMode('signup') // افتح بدون خطط
-              setIsSignUpOpen(true)
-            }}
-            className="bg-white text-black hover:bg-gray-200 transition-colors"
-          >
-            Get Started
-          </Button>
-        </motion.div>
+      <motion.nav
+        initial={{ y: -100 }}
+        animate={{ y: 0 }}
+        transition={{ duration: 0.6, ease: 'easeOut' }}
+        className="fixed top-0 w-full z-50 bg-[#0a0a0a]/80 backdrop-blur-lg border-b border-[#2a2a2a]"
+      >
+        <div className="container mx-auto px-6 flex items-center justify-between py-4">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} className="text-2xl font-bold text-white">
+            STEP Online
+          </motion.div>
+
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
+            <Button
+              onClick={() => {
+                setDialogMode('signup') // افتح بدون خطط
+                setIsSignUpOpen(true)
+              }}
+              className="bg-white text-black hover:bg-gray-200 transition-colors"
+            >
+              Get Started
+            </Button>
+          </motion.div>
+        </div>
       </motion.nav>
 
       {/* Hero Section */}
-      <motion.section style={{ opacity, scale }} className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20">
+      <motion.section
+        style={{ opacity, scale }}
+        className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20"
+      >
         {/* Animated background grid */}
         <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute inset-0" style={{
-            backgroundImage: `
-              linear-gradient(to right, #1a1a1a 1px, transparent 1px),
-              linear-gradient(to bottom, #1a1a1a 1px, transparent 1px)
-            `,
-            backgroundSize: '80px 80px'
-          }} />
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage: `
+                linear-gradient(to right, #1a1a1a 1px, transparent 1px),
+                linear-gradient(to bottom, #1a1a1a 1px, transparent 1px)
+              `,
+              backgroundSize: '80px 80px'
+            }}
+          />
         </div>
 
         <div className="container mx-auto px-6 relative z-10">
           <div className="max-w-4xl mx-auto text-center">
-            <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.2 }} className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#1a1a1a] border border-[#2a2a2a] mb-6">
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.2 }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#1a1a1a] border border-[#2a2a2a] mb-6"
+            >
               <Star className="w-4 h-4 text-white" />
               <span className="text-sm text-gray-400">Professional Test Preparation</span>
             </motion.div>
 
-            <motion.h1 initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.4 }} className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
+            <motion.h1
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.4 }}
+              className="text-5xl md:text-7xl font-bold mb-6 leading-tight"
+            >
               <span className="text-white">Master the </span>
               <span className="text-white border-b-4 border-white pb-2">STEP English Test</span>
             </motion.h1>
 
-            <motion.p initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.6 }} className="text-xl text-gray-400 mb-10 max-w-2xl mx-auto leading-relaxed">
+            <motion.p
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.6 }}
+              className="text-xl text-gray-400 mb-10 max-w-2xl mx-auto leading-relaxed"
+            >
               Experience a real test simulator with detailed explanations for every question.
               Prepare with confidence and achieve your target score.
             </motion.p>
 
-            <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.8 }} className="flex gap-4 justify-center flex-wrap">
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.8 }}
+              className="flex gap-4 justify-center flex-wrap"
+            >
               <Button
                 size="lg"
                 onClick={() => {
@@ -252,7 +287,6 @@ export default function Landing2() {
                       className={`w-full transition-all transform hover:scale-105 ${plan.popular ? 'bg-black text-white hover:bg-gray-900' : 'bg-white text-black hover:bg-gray-200'}`}
                       size="lg"
                       onClick={() => {
-                        // عند الضغط من صفحة الأسعار نحدد الخطة ونفتح الـ dialog في وضع الخطط (trial)
                         setFormData({ ...formData, plan: plan.name.toLowerCase() })
                         setDialogMode('trial') // نعرض الخطط داخل الـ dialog
                         setIsSignUpOpen(true)
@@ -286,7 +320,6 @@ export default function Landing2() {
                 <Button
                   size="lg"
                   onClick={() => {
-                    // Start Preparing -> نفتح الفورم العادي مع الخطط ونظهر رسالة التجربة التجريبية
                     setDialogMode('trial')
                     setIsSignUpOpen(true)
                   }}
@@ -320,7 +353,6 @@ export default function Landing2() {
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="space-y-6 mt-4">
-            {/* رسالة خاصة لو وضع trial */}
             {dialogMode === 'trial' && (
               <div className="bg-[#0b0b0b] p-4 rounded-md border border-[#2a2a2a] text-gray-200">
                 جرب الاختبار التجريبي قبل ماتشترك
@@ -365,7 +397,6 @@ export default function Landing2() {
               />
             </div>
 
-            {/* عرض الخطط فقط لو dialogMode === 'trial' */}
             {dialogMode === 'trial' && (
               <div className="space-y-2">
                 <Label className="text-white">Selected Plan</Label>
