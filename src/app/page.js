@@ -26,7 +26,7 @@ export default function Landing2() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     console.log('Form submitted:', formData)
-    window.location.href = '/dashboard2'
+    window.location.href = '/dashboard'
   }
 
   return (
