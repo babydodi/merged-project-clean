@@ -50,7 +50,7 @@ export async function POST(req) {
 
     await supabase.from("subscriptions").upsert([{
       user_id: customerRef,
-      plan: data?.UserDefinedField ?? "basic",
+      plan: data?.UserDefinedField ?? "basic", // ✅ نوع الاشتراك يجي من MyFatoorah
       invoice_id: Number(invoiceId),
       customer_email: data?.CustomerEmail ?? null,
       amount: Number(
@@ -65,8 +65,12 @@ export async function POST(req) {
       raw_response: statusResp
     }], { onConflict: ["invoice_id"] });
 
+    // ✅ تحديث المستخدم مع نوع الاشتراك
     if (isPaid && customerRef) {
-      await supabase.from("users").update({ role: "subscriber" }).eq("id", customerRef);
+      await supabase.from("users").update({
+        role: "subscriber",
+        subscription_plan: data?.UserDefinedField ?? "basic" // هنا الإضافة الجديدة
+      }).eq("id", customerRef);
     }
 
     // ✅ سجل واحد فقط في payment_logs
