@@ -65,7 +65,6 @@ export default function Landing2() {
       >
         <div className="container mx-auto px-6 flex items-center justify-between py-4">
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} className="text-2xl font-bold text-white">
-            {/* اسم الموقع بالعربي والإنجليزي */}
             <div className="flex flex-col md:flex-row md:items-center md:gap-3">
               <span className="block">STEP Online</span>
               <span className="block text-sm text-gray-400"> / منصة STEP</span>
@@ -81,7 +80,6 @@ export default function Landing2() {
                 }}
                 className="bg-white text-black hover:bg-gray-200 transition-colors"
               >
-                {/* زر يظهر باللغتين */}
                 <div className="flex flex-col md:flex-row md:items-center md:gap-2">
                   <span>Get Started</span>
                   <span className="text-sm text-gray-600"> / ابدأ الآن</span>
@@ -115,11 +113,9 @@ export default function Landing2() {
               <span className="text-sm text-gray-400">Professional Test Preparation / تحضير احترافي للاختبارات</span>
             </motion.div>
 
+            {/* Hero title: English only as requested */}
             <motion.h1 initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.4 }} className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
-              <div className="flex flex-col">
-                <span className="text-white">Master the STEP English Test</span>
-                <span className="text-white border-b-4 border-white pb-2">اتقن اختبار STEP للغة الإنجليزية</span>
-              </div>
+              <span className="text-white">Master the STEP English Test</span>
             </motion.h1>
 
             <motion.p initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.6 }} className="text-xl text-gray-400 mb-10 max-w-2xl mx-auto leading-relaxed">
