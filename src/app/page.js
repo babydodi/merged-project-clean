@@ -8,12 +8,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Check, BookOpen, Brain, Trophy, ArrowRight, Target, Star, Zap, Clock } from 'lucide-react'
-
-// إذا كان لديك SupabaseProvider مخصص يصدر hook مثل useSupabaseClient، استخدمه هنا:
 import { useSupabaseClient } from '@supabase/auth-helpers-react'
-// أو: import { useSupabase } from '@/components/supabase-provider' // ثم استخدم const supabase = useSupabase()
 
-/* Features with icons */
+/* Features with icons (safe, all have icon) */
 const featuresData = [
   {
     icon: BookOpen,
@@ -76,10 +73,10 @@ const plans = [
 ]
 
 export default function Landing2() {
-  const supabase = useSupabaseClient() // من SupabaseProvider (SessionContextProvider)
+  const supabase = useSupabaseClient()
   const [isSignUpOpen, setIsSignUpOpen] = useState(false)
   const [formData, setFormData] = useState({ name: '', email: '', password: '', plan: 'basic' })
-  const [dialogMode, setDialogMode] = useState('signup') // 'signup' = بدون خطط, 'trial' = مع الخطط
+  const [dialogMode, setDialogMode] = useState('signup')
   const [loading, setLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
@@ -118,7 +115,6 @@ export default function Landing2() {
             full_name: formData.name,
             plan: formData.plan
           },
-          // بعد التحقق عبر البريد، سيعاد توجيه المستخدم (إن كان التحقق مفعل)
           emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/dashboard` : undefined
         }
       })
@@ -129,15 +125,12 @@ export default function Landing2() {
         return
       }
 
-      // إذا كان التحقق عبر البريد مفعّل في Supabase، لن تحصل على جلسة مباشرة.
-      // أخبر المستخدم بالتحقق من البريد.
       if (data?.user && !data?.session) {
         setSuccessMsg('Check your email to confirm your account / تفقد بريدك لتأكيد الحساب')
         setLoading(false)
         return
       }
 
-      // إذا كان التحقق غير مفعّل وستحصل على جلسة مباشرة:
       window.location.href = '/dashboard'
     } catch (err) {
       setErrorMsg('Unexpected error, please try again / حدث خطأ غير متوقع، حاول مرة أخرى')
@@ -181,7 +174,6 @@ export default function Landing2() {
 
       {/* Hero Section */}
       <motion.section style={{ opacity, scale }} className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20">
-        {/* Background grid */}
         <div className="absolute inset-0 overflow-hidden">
           <div
             className="absolute inset-0"
@@ -202,7 +194,6 @@ export default function Landing2() {
               <span className="text-sm text-gray-400">Professional Test Preparation / تحضير احترافي للاختبارات</span>
             </motion.div>
 
-            {/* English-only hero heading */}
             <motion.h1 initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.4 }} className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
               <span className="text-white">Master the STEP English Test</span>
             </motion.h1>
@@ -242,7 +233,6 @@ export default function Landing2() {
           </div>
         </div>
 
-        {/* Scroll indicator */}
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.5, duration: 1 }} className="absolute bottom-10 left-1/2 transform -translate-x-1/2">
           <motion.div animate={{ y: [0, 10, 0] }} transition={{ duration: 2, repeat: Infinity }} className="w-6 h-10 border-2 border-[#2a2a2a] rounded-full flex justify-center pt-2">
             <motion.div className="w-1.5 h-1.5 bg-white rounded-full" animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 2, repeat: Infinity }} />
@@ -363,7 +353,7 @@ export default function Landing2() {
                 whileInView={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: plan.delay }}
                 viewport={{ once: true }}
-                whileHover={{ scale: 1.05, transition={{ duration: 0.3 }} }}
+                whileHover={{ scale: 1.05, transition: { duration: 0.3 } }}
               >
                 <Card className={`relative overflow-hidden h-full ${plan.popular ? 'bg-white border-white' : 'bg-[#141414] border-[#2a2a2a]'}`}>
                   {plan.popular && (
