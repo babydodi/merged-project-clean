@@ -9,107 +9,146 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Check, BookOpen, Brain, Trophy, ArrowRight, Target, Clock, Star, Zap } from 'lucide-react'
 
-export default function Landing2() {
-  // language: 'en' or 'ar'
-  const [lang, setLang] = useState('ar')
-  const t = (key) => translations[lang][key] || key
-
-  const translations = {
-    en: {
-      siteName: 'STEP Online',
-      pill: 'Professional Test Preparation',
-      heroTitleLine1: 'Master the',
-      heroTitleLine2: 'STEP English Test',
-      heroSubtitle: 'Experience a real test simulator with detailed explanations for every question. Prepare with confidence and achieve your target score.',
-      startJourney: 'Start Your Journey',
-      viewPricing: 'View Pricing',
-      whyChoose: 'Why Choose Our Platform?',
-      whyChooseSub: 'Experience the most comprehensive STEP test preparation',
-      features: [
-        { title: 'Real Test Simulator', desc: 'Practice with authentic test conditions and interface that mirrors the actual STEP exam' },
-        { title: 'Detailed Explanations', desc: 'Understand every question with comprehensive explanations that help you learn from mistakes' },
-        { title: 'Track Your Progress', desc: 'Monitor your improvement with detailed analytics and personalized performance insights' }
-      ],
-      benefitsTitle: 'Everything You Need to Succeed',
-      benefitsSubtitle: 'Our platform provides comprehensive tools and resources designed to maximize your STEP test performance.',
-      benefitItems: [
-        'Accurate test simulation matching real exam conditions',
-        'Step-by-step explanations for every answer',
-        'Timed practice to improve speed and accuracy',
-        'Performance tracking and progress analytics'
-      ],
-      choosePlan: 'Choose Your Plan',
-      choosePlanSub: 'Select the perfect plan for your STEP test preparation journey',
-      basic: 'Basic',
-      premium: 'Premium',
-      basicDesc: 'Essential tools for STEP preparation',
-      premiumDesc: 'Complete preparation package',
-      basicFeatures: ['Real test simulator access', 'Explanations for answers', 'Progress tracking', 'Standard support'],
-      premiumFeatures: ['Full test simulator access', 'Detailed explanations for every question', 'Advanced analytics & progress tracking', 'Priority support', 'Unlimited practice tests'],
-      mostPopular: 'MOST POPULAR',
-      perDurationEn: '/ 50 day',
-      ctaTitle: 'Ready to Ace Your STEP Test?',
-      ctaSubtitle: 'Join hundreds of students who have improved their scores with our comprehensive preparation platform',
-      startPreparing: 'Start Preparing Today',
-      footerName: 'STEP English',
-      footerCopy: '© 2025 STEP English Test Platform. All rights reserved.',
-      dialogTitle: 'Start Your Journey',
-      dialogDesc: 'Sign up now and begin your STEP test preparation',
-      trialMessage: 'Try the trial test before subscribing. After signup you will be redirected to the dashboard (no payment).',
-      fullName: 'Full Name',
-      email: 'Email Address',
-      password: 'Password',
-      selectedPlan: 'Selected Plan',
-      completeSignUp: 'Complete Sign Up'
-    },
-    ar: {
-      siteName: 'STEP أونلاين',
-      pill: 'تحضير احترافي للاختبارات',
-      heroTitleLine1: 'اتقن',
-      heroTitleLine2: 'اختبار STEP للغة الإنجليزية',
-      heroSubtitle: 'اختبر محاكي اختبار حقيقي مع شروحات مفصّلة لكل سؤال. استعد بثقة وحقق الدرجة المستهدفة.',
-      startJourney: 'ابدأ رحلتك',
-      viewPricing: 'عرض الأسعار',
-      whyChoose: 'لماذا تختار منصتنا؟',
-      whyChooseSub: 'اختبر أكثر تحضير شامل لاختبار STEP',
-      features: [
-        { title: 'محاكي اختبار حقيقي', desc: 'تمرّن في ظروف واجهة مشابهة للاختبار الفعلي' },
-        { title: 'شروحات مفصّلة', desc: 'افهم كل سؤال مع شروحات تساعدك على التعلم من الأخطاء' },
-        { title: 'تتبع تقدمك', desc: 'راقب تحسّنك مع تحليلات مفصّلة ورؤى شخصية' }
-      ],
-      benefitsTitle: 'كل ما تحتاجه للنجاح',
-      benefitsSubtitle: 'منصتنا توفر أدوات وموارد شاملة لزيادة أداءك في اختبار STEP.',
-      benefitItems: [
-        'محاكاة دقيقة للاختبار تطابق ظروف الامتحان الحقيقي',
-        'شروحات خطوة بخطوة لكل إجابة',
-        'تمارين زمنية لتحسين السرعة والدقة',
-        'تتبع الأداء وتحليلات التقدم'
-      ],
-      choosePlan: 'اختر خطتك',
-      choosePlanSub: 'اختر الخطة المناسبة لرحلة تحضيرك لاختبار STEP',
-      basic: 'الأساسي',
-      premium: 'البريميوم',
-      basicDesc: 'أدوات أساسية للتحضير لاختبار STEP',
-      premiumDesc: 'حزمة تحضير كاملة',
-      basicFeatures: ['وصول لمحاكي الاختبار', 'شروحات مختصرة للإجابات', 'تتبع التقدم', 'دعم قياسي'],
-      premiumFeatures: ['وصول كامل لمحاكي الاختبار', 'شروحات مفصّلة لكل سؤال', 'تحليلات متقدمة وتتبع التقدم', 'دعم أولوية', 'اختبارات غير محدودة'],
-      mostPopular: 'الأكثر شيوعاً',
-      perDurationAr: '/ 50 يوم',
-      ctaTitle: 'جاهز لتتفوق في اختبار STEP؟',
-      ctaSubtitle: 'انضم لمئات الطلاب الذين حسّنوا درجاتهم باستخدام منصتنا الشاملة',
-      startPreparing: 'ابدأ التحضير الآن',
-      footerName: 'STEP English',
-      footerCopy: '© 2025 منصة STEP English. جميع الحقوق محفوظة.',
-      dialogTitle: 'ابدأ رحلتك',
-      dialogDesc: 'سجّل الآن وابدأ تحضيرك لاختبار STEP',
-      trialMessage: 'جرب الاختبار التجريبي قبل ما تشترك. بعد التسجيل ستنتقل للداشبورد (بدون دفع).',
-      fullName: 'الاسم الكامل',
-      email: 'البريد الإلكتروني',
-      password: 'كلمة المرور',
-      selectedPlan: 'الخطة المختارة',
-      completeSignUp: 'إكمال التسجيل'
-    }
+/* ترجمة النصوص */
+const translations = {
+  en: {
+    siteName: 'STEP Online',
+    pill: 'Professional Test Preparation',
+    heroTitleLine1: 'Master the',
+    heroTitleLine2: 'STEP English Test',
+    heroSubtitle:
+      'Experience a real test simulator with detailed explanations for every question. Prepare with confidence and achieve your target score.',
+    startJourney: 'Start Your Journey',
+    viewPricing: 'View Pricing',
+    whyChoose: 'Why Choose Our Platform?',
+    whyChooseSub: 'Experience the most comprehensive STEP test preparation',
+    features: [
+      { title: 'Real Test Simulator', desc: 'Practice with authentic test conditions and interface that mirrors the actual STEP exam' },
+      { title: 'Detailed Explanations', desc: 'Understand every question with comprehensive explanations that help you learn from mistakes' },
+      { title: 'Track Your Progress', desc: 'Monitor your improvement with detailed analytics and personalized performance insights' }
+    ],
+    benefitsTitle: 'Everything You Need to Succeed',
+    benefitsSubtitle: 'Our platform provides comprehensive tools and resources designed to maximize your STEP test performance.',
+    benefitItems: [
+      'Accurate test simulation matching real exam conditions',
+      'Step-by-step explanations for every answer',
+      'Timed practice to improve speed and accuracy',
+      'Performance tracking and progress analytics'
+    ],
+    choosePlan: 'Choose Your Plan',
+    choosePlanSub: 'Select the perfect plan for your STEP test preparation journey',
+    basic: 'Basic',
+    premium: 'Premium',
+    basicDesc: 'Essential tools for STEP preparation',
+    premiumDesc: 'Complete preparation package',
+    basicFeatures: ['Real test simulator access', 'Explanations for answers', 'Progress tracking', 'Standard support'],
+    premiumFeatures: [
+      'Full test simulator access',
+      'Detailed explanations for every question',
+      'Advanced analytics & progress tracking',
+      'Priority support',
+      'Unlimited practice tests'
+    ],
+    mostPopular: 'MOST POPULAR',
+    perDurationEn: '/ 50 day',
+    ctaTitle: 'Ready to Ace Your STEP Test?',
+    ctaSubtitle: 'Join hundreds of students who have improved their scores with our comprehensive preparation platform',
+    startPreparing: 'Start Preparing Today',
+    footerName: 'STEP English',
+    footerCopy: '© 2025 STEP English Test Platform. All rights reserved.',
+    dialogTitle: 'Start Your Journey',
+    dialogDesc: 'Sign up now and begin your STEP test preparation',
+    trialMessage: 'Try the trial test before subscribing. After signup you will be redirected to the dashboard (no payment).',
+    fullName: 'Full Name',
+    email: 'Email Address',
+    password: 'Password',
+    selectedPlan: 'Selected Plan',
+    completeSignUp: 'Complete Sign Up'
+  },
+  ar: {
+    siteName: 'STEP أونلاين',
+    pill: 'تحضير احترافي للاختبارات',
+    heroTitleLine1: 'اتقن',
+    heroTitleLine2: 'اختبار STEP للغة الإنجليزية',
+    heroSubtitle:
+      'اختبر محاكي اختبار حقيقي مع شروحات مفصّلة لكل سؤال. استعد بثقة وحقق الدرجة المستهدفة.',
+    startJourney: 'ابدأ رحلتك',
+    viewPricing: 'عرض الأسعار',
+    whyChoose: 'لماذا تختار منصتنا؟',
+    whyChooseSub: 'اختبر أكثر تحضير شامل لاختبار STEP',
+    features: [
+      { title: 'محاكي اختبار حقيقي', desc: 'تمرّن في ظروف واجهة مشابهة للاختبار الفعلي' },
+      { title: 'شروحات مفصّلة', desc: 'افهم كل سؤال مع شروحات تساعدك على التعلم من الأخطاء' },
+      { title: 'تتبع تقدمك', desc: 'راقب تحسّنك مع تحليلات مفصّلة ورؤى شخصية' }
+    ],
+    benefitsTitle: 'كل ما تحتاجه للنجاح',
+    benefitsSubtitle: 'منصتنا توفر أدوات وموارد شاملة لزيادة أداءك في اختبار STEP.',
+    benefitItems: [
+      'محاكاة دقيقة للاختبار تطابق ظروف الامتحان الحقيقي',
+      'شروحات خطوة بخطوة لكل إجابة',
+      'تمارين زمنية لتحسين السرعة والدقة',
+      'تتبع الأداء وتحليلات التقدم'
+    ],
+    choosePlan: 'اختر خطتك',
+    choosePlanSub: 'اختر الخطة المناسبة لرحلة تحضيرك لاختبار STEP',
+    basic: 'الأساسي',
+    premium: 'البريميوم',
+    basicDesc: 'أدوات أساسية للتحضير لاختبار STEP',
+    premiumDesc: 'حزمة تحضير كاملة',
+    basicFeatures: ['وصول لمحاكي الاختبار', 'شروحات مختصرة للإجابات', 'تتبع التقدم', 'دعم قياسي'],
+    premiumFeatures: [
+      'وصول كامل لمحاكي الاختبار',
+      'شروحات مفصّلة لكل سؤال',
+      'تحليلات متقدمة وتتبع التقدم',
+      'دعم أولوية',
+      'اختبارات غير محدودة'
+    ],
+    mostPopular: 'الأكثر شيوعاً',
+    perDurationAr: '/ 50 يوم',
+    ctaTitle: 'جاهز لتتفوق في اختبار STEP؟',
+    ctaSubtitle: 'انضم لمئات الطلاب الذين حسّنوا درجاتهم باستخدام منصتنا الشاملة',
+    startPreparing: 'ابدأ التحضير الآن',
+    footerName: 'STEP English',
+    footerCopy: '© 2025 منصة STEP English. جميع الحقوق محفوظة.',
+    dialogTitle: 'ابدأ رحلتك',
+    dialogDesc: 'سجّل الآن وابدأ تحضيرك لاختبار STEP',
+    trialMessage: 'جرب الاختبار التجريبي قبل ما تشترك. بعد التسجيل ستنتقل للداشبورد (بدون دفع).',
+    fullName: 'الاسم الكامل',
+    email: 'البريد الإلكتروني',
+    password: 'كلمة المرور',
+    selectedPlan: 'الخطة المختارة',
+    completeSignUp: 'إكمال التسجيل'
   }
+}
+
+/* بيانات الميزات مع أيقونات صحيحة لتجنّب undefined */
+const featuresData = [
+  {
+    icon: BookOpen,
+    titleEn: 'Real Test Simulator',
+    titleAr: 'محاكي اختبار حقيقي',
+    descEn: 'Practice with authentic test conditions and interface that mirrors the actual STEP exam',
+    descAr: 'تمرّن في ظروف واجهة مشابهة للاختبار الفعلي'
+  },
+  {
+    icon: Brain,
+    titleEn: 'Detailed Explanations',
+    titleAr: 'شروحات مفصّلة',
+    descEn: 'Understand every question with comprehensive explanations that help you learn from mistakes',
+    descAr: 'افهم كل سؤال مع شروحات تساعدك على التعلم من الأخطاء'
+  },
+  {
+    icon: Trophy,
+    titleEn: 'Track Your Progress',
+    titleAr: 'تتبع تقدمك',
+    descEn: 'Monitor your improvement with detailed analytics and personalized performance insights',
+    descAr: 'راقب تحسّنك مع تحليلات مفصّلة ورؤى شخصية'
+  }
+]
+
+export default function Landing2() {
+  const [lang, setLang] = useState('ar') // 'ar' or 'en'
+  const t = (key) => translations[lang][key] || key
 
   const [isSignUpOpen, setIsSignUpOpen] = useState(false)
   const [formData, setFormData] = useState({ name: '', email: '', password: '', plan: 'basic' })
@@ -123,17 +162,21 @@ export default function Landing2() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     console.log('Form submitted:', formData)
-    // هنا يمكنك استبدال هذا السلوك بإرسال بيانات إلى الـ backend
+    // استبدل هذا بإرسال بيانات فعلية للباك إند عند الحاجة
     window.location.href = '/dashboard'
   }
 
-  // Helper to render plan duration text based on language
-  const planDuration = (lang === 'ar') ? translations.ar.perDurationAr : translations.en.perDurationEn
+  const planDuration = lang === 'ar' ? translations.ar.perDurationAr : translations.en.perDurationEn
 
   return (
     <div ref={containerRef} dir={lang === 'ar' ? 'rtl' : 'ltr'}>
       {/* Navigation */}
-      <motion.nav initial={{ y: -100 }} animate={{ y: 0 }} transition={{ duration: 0.6, ease: 'easeOut' }} className="fixed top-0 w-full z-50 bg-[#0a0a0a]/80 backdrop-blur-lg border-b border-[#2a2a2a]">
+      <motion.nav
+        initial={{ y: -100 }}
+        animate={{ y: 0 }}
+        transition={{ duration: 0.6, ease: 'easeOut' }}
+        className="fixed top-0 w-full z-50 bg-[#0a0a0a]/80 backdrop-blur-lg border-b border-[#2a2a2a]"
+      >
         <div className="container mx-auto px-6 flex items-center justify-between py-4">
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} className="text-2xl font-bold text-white">
             {t('siteName')}
@@ -166,13 +209,16 @@ export default function Landing2() {
       <motion.section style={{ opacity, scale }} className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20">
         {/* Animated background grid */}
         <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute inset-0" style={{
-            backgroundImage: `
-              linear-gradient(to right, #1a1a1a 1px, transparent 1px),
-              linear-gradient(to bottom, #1a1a1a 1px, transparent 1px)
-            `,
-            backgroundSize: '80px 80px'
-          }} />
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage: `
+                linear-gradient(to right, #1a1a1a 1px, transparent 1px),
+                linear-gradient(to bottom, #1a1a1a 1px, transparent 1px)
+              `,
+              backgroundSize: '80px 80px'
+            }}
+          />
         </div>
 
         <div className="container mx-auto px-6 relative z-10">
@@ -233,17 +279,17 @@ export default function Landing2() {
           </motion.div>
 
           <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-            {translations[lang].features.map((feature, index) => (
+            {featuresData.map((feature, index) => (
               <motion.div key={index} initial={{ opacity: 0, y: 50 }} whileInView={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.2 + index * 0.2 }} viewport={{ once: true }} whileHover={{ y: -10, transition: { duration: 0.3 } }}>
                 <Card className="bg-[#141414] border-[#2a2a2a] hover:border-white transition-all duration-300 h-full">
                   <CardHeader>
                     <motion.div whileHover={{ rotate: 360, scale: 1.1 }} transition={{ duration: 0.6 }} className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mb-4">
                       <feature.icon className="w-8 h-8 text-black" />
                     </motion.div>
-                    <CardTitle className="text-2xl text-white">{feature.title}</CardTitle>
+                    <CardTitle className="text-2xl text-white">{lang === 'ar' ? feature.titleAr : feature.titleEn}</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <CardDescription className="text-gray-400 text-base leading-relaxed">{feature.desc}</CardDescription>
+                    <CardDescription className="text-gray-400 text-base leading-relaxed">{lang === 'ar' ? feature.descAr : feature.descEn}</CardDescription>
                   </CardContent>
                 </Card>
               </motion.div>
@@ -420,7 +466,7 @@ export default function Landing2() {
 
       {/* Sign Up Dialog */}
       <Dialog open={isSignUpOpen} onOpenChange={setIsSignUpOpen}>
-        <DialogContent className="bg-[#141414] border-[#2a2a2a] text-white">
+        <DialogContent className="bg-[#141414] border-[#2a2a2a] text-white z-60 relative">
           <DialogHeader>
             <DialogTitle className="text-2xl text-white">{t('dialogTitle')}</DialogTitle>
             <DialogDescription className="text-gray-400">{t('dialogDesc')}</DialogDescription>
@@ -482,7 +528,9 @@ export default function Landing2() {
                       onClick={() => setFormData({ ...formData, plan: planType })}
                       className={`flex-1 p-4 rounded-lg border-2 transition-all ${formData.plan === planType ? 'border-white bg-white/10' : 'border-[#2a2a2a] hover:border-[#3a3a3a]'}`}
                     >
-                      <div className="font-semibold text-white capitalize">{planType === 'basic' ? translations[lang].basic : translations[lang].premium}</div>
+                      <div className="font-semibold text-white capitalize">
+                        {planType === 'basic' ? translations[lang].basic : translations[lang].premium}
+                      </div>
                       <div className="text-2xl font-bold text-white">﷼{planType === 'basic' ? '75' : '85'}</div>
                     </button>
                   ))}
