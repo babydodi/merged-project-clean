@@ -69,8 +69,9 @@ export default function Landing2() {
       </motion.nav>
 
       {/* Hero Section */}
+      {/* مهم: الـ ref موضوع على الـ motion.section حتى يقيس useScroll بالنسبة للهيرو كما في التصميم الأصلي */}
       <motion.section
-        ref={containerRef}                     {/* <-- مهم: الـ ref هنا */}
+        ref={containerRef}
         style={{ opacity, scale }}
         className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20"
       >
