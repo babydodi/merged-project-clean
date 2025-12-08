@@ -2,6 +2,8 @@
 
 import { useState, useRef } from 'react'
 import { motion, useScroll, useTransform } from 'framer-motion'
+import { useSupabaseClient } from '@supabase/auth-helpers-react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -10,19 +12,69 @@ import { Label } from '@/components/ui/label'
 import { Check, BookOpen, Brain, Trophy, ArrowRight, Target, Clock, Star, Zap } from 'lucide-react'
 
 export default function Landing2() {
-  const [isSignUpOpen, setIsSignUpOpen] = useState(false)
-  const [formData, setFormData] = useState({ name: '', email: '', password: '', plan: 'basic' })
-  const containerRef = useRef(null)
+  const supabase = useSupabaseClient()
+  const router = useRouter()
 
+  const [isSignUpOpen, setIsSignUpOpen] = useState(false)
+  const [showPlansInDialog, setShowPlansInDialog] = useState(true)
+  const [dialogNote, setDialogNote] = useState('') // message shown above form when dialog opens
+  const [formData, setFormData] = useState({ name: '', email: '', password: '', plan: 'basic' })
+  const [loadingSubmit, setLoadingSubmit] = useState(false)
+  const [submitError, setSubmitError] = useState('')
+
+  const containerRef = useRef(null)
   const { scrollYProgress } = useScroll({ target: containerRef, offset: ['start start', 'end end'] })
   const opacity = useTransform(scrollYProgress, [0, 0.2], [1, 0])
   const scale = useTransform(scrollYProgress, [0, 0.2], [1, 0.95])
 
+  const openDialog = ({ withPlans = true, note = '' } = {}) => {
+    setShowPlansInDialog(withPlans)
+    setDialogNote(note)
+    setIsSignUpOpen(true)
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
-    console.log('Form submitted:', formData)
-    // هنا يمكنك استدعاء API التسجيل ثم إعادة التوجيه
-    window.location.href = '/dashboard'
+    setSubmitError('')
+    setLoadingSubmit(true)
+
+    // Basic client-side validation
+    if (!formData.name || !formData.email || !formData.password) {
+      setSubmitError('Please fill all required fields / الرجاء تعبئة جميع الحقول')
+      setLoadingSubmit(false)
+      return
+    }
+
+    try {
+      // Use Supabase signUp to register the user
+      const { data, error } = await supabase.auth.signUp(
+        {
+          email: formData.email,
+          password: formData.password,
+        },
+        {
+          data: {
+            full_name: formData.name,
+            plan: formData.plan,
+          },
+        }
+      )
+
+      if (error) {
+        throw error
+      }
+
+      // If signUp returns a user or requires email confirmation, redirect to dashboard or show message
+      // Here we redirect to dashboard after successful sign up
+      setIsSignUpOpen(false)
+      // If you prefer client-side navigation:
+      router.push('/dashboard')
+    } catch (err) {
+      console.error('signup error', err)
+      setSubmitError(err?.message || 'Registration failed / فشل التسجيل')
+    } finally {
+      setLoadingSubmit(false)
+    }
   }
 
   return (
@@ -40,7 +92,8 @@ export default function Landing2() {
           </motion.div>
 
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
-            <Button onClick={() => setIsSignUpOpen(true)} className="bg-white text-black hover:bg-gray-200 transition-colors">
+            {/* Get Started: open dialog WITHOUT plans */}
+            <Button onClick={() => openDialog({ withPlans: false })} className="bg-white text-black hover:bg-gray-200 transition-colors">
               Get Started
             </Button>
           </motion.div>
@@ -104,22 +157,24 @@ export default function Landing2() {
               transition={{ duration: 0.8, delay: 0.8 }}
               className="flex gap-4 justify-center flex-wrap"
             >
+              {/* Start Your Journey: open dialog WITHOUT plans */}
               <Button
                 size="lg"
-                onClick={() => setIsSignUpOpen(true)}
+                onClick={() => openDialog({ withPlans: false })}
                 className="bg-white text-black hover:bg-gray-200 transition-all transform hover:scale-105 text-lg px-8 py-6"
               >
                 Start Your Journey
                 <ArrowRight className="ml-2 w-5 h-5" />
               </Button>
 
+              {/* Start Preparing: open dialog WITH plans and show note */}
               <Button
                 size="lg"
                 variant="outline"
                 className="border-[#2a2a2a] text-white hover:bg-[#1a1a1a] text-lg px-8 py-6"
-                onClick={() => document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' })}
+                onClick={() => openDialog({ withPlans: true, note: 'جرب الاختبار التجريبي قبل ماتشترك' })}
               >
-                View Pricing
+                Start Preparing
               </Button>
             </motion.div>
           </div>
@@ -188,57 +243,6 @@ export default function Landing2() {
         </div>
       </section>
 
-      {/* Benefits Section */}
-      <section className="py-32 border-t border-[#1a1a1a]">
-        <div className="container mx-auto px-6">
-          <div className="max-w-6xl mx-auto">
-            <motion.div initial={{ opacity: 0, x: -50 }} whileInView={{ opacity: 1, x: 0 }} transition={{ duration: 0.8 }} viewport={{ once: true }} className="grid md:grid-cols-2 gap-16 items-center">
-              <div>
-                <h2 className="text-4xl md:text-5xl font-bold text-white mb-6">Everything You Need to Succeed</h2>
-                <p className="text-lg text-gray-400 mb-8">Our platform provides comprehensive tools and resources designed to maximize your STEP test performance.</p>
-
-                <div className="space-y-6">
-                  {[
-                    { icon: Target, text: 'Accurate test simulation matching real exam conditions' },
-                    { icon: Brain, text: 'Step-by-step explanations for every answer' },
-                    { icon: Clock, text: 'Timed practice to improve speed and accuracy' },
-                    { icon: Trophy, text: 'Performance tracking and progress analytics' },
-                  ].map((item, index) => (
-                    <motion.div key={index} initial={{ opacity: 0, x: -30 }} whileInView={{ opacity: 1, x: 0 }} transition={{ duration: 0.5, delay: index * 0.1 }} viewport={{ once: true }} className="flex items-start gap-4">
-                      <div className="flex-shrink-0 w-12 h-12 bg-white rounded-xl flex items-center justify-center">
-                        <item.icon className="w-6 h-6 text-black" />
-                      </div>
-                      <p className="text-gray-400 text-lg pt-2">{item.text}</p>
-                    </motion.div>
-                  ))}
-                </div>
-              </div>
-
-              <motion.div initial={{ opacity: 0, scale: 0.8 }} whileInView={{ opacity: 1, scale: 1 }} transition={{ duration: 0.8 }} viewport={{ once: true }} className="relative">
-                <div className="relative bg-[#141414] rounded-3xl p-8 border border-[#2a2a2a]">
-                  <div className="space-y-4">
-                    {[1, 2, 3].map((item, index) => (
-                      <motion.div key={item} initial={{ opacity: 0, x: 50 }} whileInView={{ opacity: 1, x: 0 }} transition={{ duration: 0.5, delay: 0.2 + index * 0.1 }} viewport={{ once: true }} className="bg-[#0a0a0a] rounded-xl p-6 border border-[#2a2a2a]">
-                        <div className="flex items-center gap-4 mb-3">
-                          <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center text-black font-bold">{item}</div>
-
-                          <div className="flex-1 h-2 bg-[#1a1a1a] rounded-full overflow-hidden">
-                            <motion.div initial={{ width: 0 }} whileInView={{ width: `${60 + item * 10}%` }} transition={{ duration: 1, delay: 0.5 + index * 0.1 }} viewport={{ once: true }} className="h-full bg-white" />
-                          </div>
-                        </div>
-
-                        <div className="h-2 bg-[#1a1a1a] rounded-full mb-2" />
-                        <div className="h-2 bg-[#1a1a1a] rounded-full w-3/4" />
-                      </motion.div>
-                    ))}
-                  </div>
-                </div>
-              </motion.div>
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
       {/* Pricing Section */}
       <section id="pricing" className="py-32 border-t border-[#1a1a1a]">
         <div className="container mx-auto px-6">
@@ -280,7 +284,7 @@ export default function Landing2() {
 
                     <div className="mt-6">
                       <span className={`text-5xl font-bold ${plan.popular ? 'text-black' : 'text-white'}`}>{`﷼${plan.price}`}</span>
-                      <span className={`ml-2 ${plan.popular ? 'text-gray-600' : 'text-gray-400'}`}>/ lifetime</span>
+                      <span className={`ml-2 ${plan.popular ? 'text-gray-600' : 'text-gray-400'}`}>/ 50 days</span>
                     </div>
                   </CardHeader>
 
@@ -302,8 +306,9 @@ export default function Landing2() {
                       className={`w-full transition-all transform hover:scale-105 ${plan.popular ? 'bg-black text-white hover:bg-gray-900' : 'bg-white text-black hover:bg-gray-200'}`}
                       size="lg"
                       onClick={() => {
+                        // When user clicks Get Started on a pricing card, open dialog WITH plans and preselect this plan
                         setFormData({ ...formData, plan: plan.name.toLowerCase() })
-                        setIsSignUpOpen(true)
+                        openDialog({ withPlans: true, note: 'جرب الاختبار التجريبي قبل ماتشترك' })
                       }}
                     >
                       Get Started
@@ -331,7 +336,8 @@ export default function Landing2() {
               </motion.p>
 
               <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.4 }} viewport={{ once: true }}>
-                <Button size="lg" onClick={() => setIsSignUpOpen(true)} className="bg-black text-white hover:bg-gray-900 transition-all transform hover:scale-105 text-lg px-10 py-6">
+                {/* Start Preparing here opens dialog WITH plans and note */}
+                <Button size="lg" onClick={() => openDialog({ withPlans: true, note: 'جرب الاختبار التجريبي قبل ماتشترك' })} className="bg-black text-white hover:bg-gray-900 transition-all transform hover:scale-105 text-lg px-10 py-6">
                   Start Preparing Today
                   <Zap className="ml-2 w-5 h-5" />
                 </Button>
@@ -360,6 +366,9 @@ export default function Landing2() {
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="space-y-6 mt-4">
+            {/* Optional note shown when opening with plans or from CTA */}
+            {dialogNote && <div className="text-sm text-yellow-300">{dialogNote}</div>}
+
             <div className="space-y-2">
               <Label htmlFor="name" className="text-white">Full Name</Label>
               <Input
@@ -398,25 +407,31 @@ export default function Landing2() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label className="text-white">Selected Plan</Label>
-              <div className="flex gap-4">
-                {['basic', 'premium'].map((planType) => (
-                  <button
-                    key={planType}
-                    type="button"
-                    onClick={() => setFormData({ ...formData, plan: planType })}
-                    className={`flex-1 p-4 rounded-lg border-2 transition-all ${formData.plan === planType ? 'border-white bg-white/10' : 'border-[#2a2a2a] hover:border-[#3a3a3a]'}`}
-                  >
-                    <div className="font-semibold text-white capitalize">{planType}</div>
-                    <div className="text-2xl font-bold text-white">{planType === 'basic' ? '﷼75' : '﷼85'}</div>
-                  </button>
-                ))}
+            {/* Plans: shown only when showPlansInDialog is true */}
+            {showPlansInDialog && (
+              <div className="space-y-2">
+                <Label className="text-white">Selected Plan</Label>
+                <div className="flex gap-4">
+                  {['basic', 'premium'].map((planType) => (
+                    <button
+                      key={planType}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, plan: planType })}
+                      className={`flex-1 p-4 rounded-lg border-2 transition-all ${formData.plan === planType ? 'border-white bg-white/10' : 'border-[#2a2a2a] hover:border-[#3a3a3a]'}`}
+                    >
+                      <div className="font-semibold text-white capitalize">{planType}</div>
+                      <div className="text-2xl font-bold text-white">{planType === 'basic' ? '﷼75' : '﷼85'}</div>
+                      <div className="text-sm text-gray-400">/ 50 days</div>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
-            <Button type="submit" className="w-full bg-white text-black hover:bg-gray-200 transition-colors" size="lg">
-              Complete Sign Up
+            {submitError && <div className="text-sm text-red-400">{submitError}</div>}
+
+            <Button type="submit" className="w-full bg-white text-black hover:bg-gray-200 transition-colors" size="lg" disabled={loadingSubmit}>
+              {loadingSubmit ? 'Registering...' : 'Complete Sign Up'}
             </Button>
           </form>
         </DialogContent>
