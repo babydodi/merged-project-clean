@@ -9,7 +9,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Check, BookOpen, Brain, Trophy, ArrowRight, Target, Star, Zap, Clock } from 'lucide-react'
 
-/* Features with icons (safe, all have icon) */
+// إذا كان لديك SupabaseProvider مخصص يصدر hook مثل useSupabaseClient، استخدمه هنا:
+import { useSupabaseClient } from '@supabase/auth-helpers-react'
+// أو: import { useSupabase } from '@/components/supabase-provider' // ثم استخدم const supabase = useSupabase()
+
+/* Features with icons */
 const featuresData = [
   {
     icon: BookOpen,
@@ -72,9 +76,13 @@ const plans = [
 ]
 
 export default function Landing2() {
+  const supabase = useSupabaseClient() // من SupabaseProvider (SessionContextProvider)
   const [isSignUpOpen, setIsSignUpOpen] = useState(false)
   const [formData, setFormData] = useState({ name: '', email: '', password: '', plan: 'basic' })
   const [dialogMode, setDialogMode] = useState('signup') // 'signup' = بدون خطط, 'trial' = مع الخطط
+  const [loading, setLoading] = useState(false)
+  const [errorMsg, setErrorMsg] = useState('')
+  const [successMsg, setSuccessMsg] = useState('')
   const containerRef = useRef(null)
 
   const { scrollYProgress } = useScroll({ target: containerRef, offset: ['start start', 'end end'] })
@@ -85,12 +93,56 @@ export default function Landing2() {
     if (presetPlan) setFormData((prev) => ({ ...prev, plan: presetPlan }))
     setDialogMode(mode)
     setIsSignUpOpen(true)
+    setErrorMsg('')
+    setSuccessMsg('')
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    console.log('Form submitted:', formData)
-    window.location.href = '/dashboard'
+    setErrorMsg('')
+    setSuccessMsg('')
+    setLoading(true)
+
+    if (!formData.email || !formData.password || !formData.name) {
+      setErrorMsg('Please fill name, email, and password / الرجاء إدخال الاسم والبريد وكلمة المرور')
+      setLoading(false)
+      return
+    }
+
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: {
+            full_name: formData.name,
+            plan: formData.plan
+          },
+          // بعد التحقق عبر البريد، سيعاد توجيه المستخدم (إن كان التحقق مفعل)
+          emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/dashboard` : undefined
+        }
+      })
+
+      if (error) {
+        setErrorMsg(error.message || 'Registration failed / فشل التسجيل')
+        setLoading(false)
+        return
+      }
+
+      // إذا كان التحقق عبر البريد مفعّل في Supabase، لن تحصل على جلسة مباشرة.
+      // أخبر المستخدم بالتحقق من البريد.
+      if (data?.user && !data?.session) {
+        setSuccessMsg('Check your email to confirm your account / تفقد بريدك لتأكيد الحساب')
+        setLoading(false)
+        return
+      }
+
+      // إذا كان التحقق غير مفعّل وستحصل على جلسة مباشرة:
+      window.location.href = '/dashboard'
+    } catch (err) {
+      setErrorMsg('Unexpected error, please try again / حدث خطأ غير متوقع، حاول مرة أخرى')
+      setLoading(false)
+    }
   }
 
   const planDurationEn = '/ 50 day'
@@ -311,7 +363,7 @@ export default function Landing2() {
                 whileInView={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: plan.delay }}
                 viewport={{ once: true }}
-                whileHover={{ scale: 1.05, transition: { duration: 0.3 } }}
+                whileHover={{ scale: 1.05, transition={{ duration: 0.3 }} }}
               >
                 <Card className={`relative overflow-hidden h-full ${plan.popular ? 'bg-white border-white' : 'bg-[#141414] border-[#2a2a2a]'}`}>
                   {plan.popular && (
@@ -442,6 +494,18 @@ export default function Landing2() {
               </div>
             )}
 
+            {errorMsg && (
+              <div className="bg-red-500/10 border border-red-500 text-red-300 rounded p-3">
+                {errorMsg}
+              </div>
+            )}
+
+            {successMsg && (
+              <div className="bg-emerald-500/10 border border-emerald-500 text-emerald-300 rounded p-3">
+                {successMsg}
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="name" className="text-white">Full Name / الاسم الكامل</Label>
               <Input
@@ -502,8 +566,8 @@ export default function Landing2() {
               </div>
             )}
 
-            <Button type="submit" className="w-full bg-white text-black hover:bg-gray-200 transition-colors" size="lg">
-              Complete Sign Up / إكمال التسجيل
+            <Button type="submit" className="w-full bg-white text-black hover:bg-gray-200 transition-colors" size="lg" disabled={loading}>
+              {loading ? 'Creating account… / جاري إنشاء الحساب…' : 'Complete Sign Up / إكمال التسجيل'}
             </Button>
           </form>
         </DialogContent>
