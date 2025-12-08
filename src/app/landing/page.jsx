@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Check, BookOpen, Brain, Trophy, ArrowRight, Target, Clock, Star, Zap } from 'lucide-react'
 
-/* بيانات الميزات مع أيقونات ونصوص بالعربي والإنجليزي */
+/* ميزات الصفحة مع أيقونات ونصوص ثنائية اللغة */
 const featuresData = [
   {
     icon: BookOpen,
@@ -34,6 +34,43 @@ const featuresData = [
   }
 ]
 
+/* الخطط مع ميزات ثنائية اللغة (EN + AR) */
+const plans = [
+  {
+    name: 'basic',
+    price: 75,
+    titleEn: 'Basic',
+    titleAr: 'الأساسي',
+    descriptionEn: 'Essential tools for STEP preparation',
+    descriptionAr: 'أدوات أساسية للتحضير لاختبار STEP',
+    features: [
+      { en: 'Real test simulator access', ar: 'وصول لمحاكي الاختبار' },
+      { en: 'Basic explanations for answers', ar: 'شروحات مختصرة للإجابات' },
+      { en: 'Progress tracking', ar: 'تتبع التقدم' },
+      { en: 'Standard support', ar: 'دعم قياسي' }
+    ],
+    popular: false,
+    delay: 0.2
+  },
+  {
+    name: 'premium',
+    price: 85,
+    titleEn: 'Premium',
+    titleAr: 'البريميوم',
+    descriptionEn: 'Complete preparation package',
+    descriptionAr: 'حزمة تحضير كاملة',
+    features: [
+      { en: 'Full test simulator access', ar: 'وصول كامل لمحاكي الاختبار' },
+      { en: 'Detailed explanations for every question', ar: 'شروحات مفصّلة لكل سؤال' },
+      { en: 'Advanced analytics & insights', ar: 'تحليلات متقدمة ورؤى' },
+      { en: 'Priority support', ar: 'دعم أولوية' },
+      { en: 'Unlimited practice tests', ar: 'اختبارات غير محدودة' }
+    ],
+    popular: true,
+    delay: 0.4
+  }
+]
+
 export default function Landing2() {
   const [isSignUpOpen, setIsSignUpOpen] = useState(false)
   const [formData, setFormData] = useState({ name: '', email: '', password: '', plan: 'basic' })
@@ -47,7 +84,7 @@ export default function Landing2() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     console.log('Form submitted:', formData)
-    // استبدل هذا بإرسال بيانات فعلية للباك إند عند الحاجة
+    // هنا يمكنك استبدال السلوك بإرسال بيانات إلى الباك إند
     window.location.href = '/dashboard'
   }
 
@@ -92,7 +129,6 @@ export default function Landing2() {
 
       {/* Hero Section */}
       <motion.section style={{ opacity, scale }} className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20">
-        {/* Animated background grid */}
         <div className="absolute inset-0 overflow-hidden">
           <div
             className="absolute inset-0"
@@ -113,7 +149,7 @@ export default function Landing2() {
               <span className="text-sm text-gray-400">Professional Test Preparation / تحضير احترافي للاختبارات</span>
             </motion.div>
 
-            {/* Hero title: English only as requested */}
+            {/* العنوان بالإنجليزية فقط كما طلبت */}
             <motion.h1 initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.4 }} className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
               <span className="text-white">Master the STEP English Test</span>
             </motion.h1>
@@ -156,7 +192,6 @@ export default function Landing2() {
           </div>
         </div>
 
-        {/* Scroll indicator */}
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.5, duration: 1 }} className="absolute bottom-10 left-1/2 transform -translate-x-1/2">
           <motion.div animate={{ y: [0, 10, 0] }} transition={{ duration: 2, repeat: Infinity }} className="w-6 h-10 border-2 border-[#2a2a2a] rounded-full flex justify-center pt-2">
             <motion.div className="w-1.5 h-1.5 bg-white rounded-full" animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 2, repeat: Infinity }} />
@@ -263,41 +298,7 @@ export default function Landing2() {
           </motion.div>
 
           <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
-            {[
-              {
-                name: 'basic',
-                price: 75,
-                titleEn: 'Basic',
-                titleAr: 'الأساسي',
-                descriptionEn: 'Essential tools for STEP preparation',
-                descriptionAr: 'أدوات أساسية للتحضير لاختبار STEP',
-                features: [
-                  'Real test simulator access',
-                  'Basic explanations for answers',
-                  'Progress tracking',
-                  'Standard support'
-                ],
-                popular: false,
-                delay: 0.2
-              },
-              {
-                name: 'premium',
-                price: 85,
-                titleEn: 'Premium',
-                titleAr: 'البريميوم',
-                descriptionEn: 'Complete preparation package',
-                descriptionAr: 'حزمة تحضير كاملة',
-                features: [
-                  'Full test simulator access',
-                  'Detailed explanations for every question',
-                  'Advanced analytics & insights',
-                  'Priority support',
-                  'Unlimited practice tests'
-                ],
-                popular: true,
-                delay: 0.4
-              }
-            ].map((plan) => (
+            {plans.map((plan) => (
               <motion.div key={plan.name} initial={{ opacity: 0, y: 50 }} whileInView={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: plan.delay }} viewport={{ once: true }} whileHover={{ scale: 1.05, transition: { duration: 0.3 } }}>
                 <Card className={`relative overflow-hidden h-full ${plan.popular ? 'bg-white border-white' : 'bg-[#141414] border-[#2a2a2a]'}`}>
                   {plan.popular && (
@@ -313,6 +314,7 @@ export default function Landing2() {
                         <span className="text-sm text-gray-500">{plan.titleAr}</span>
                       </div>
                     </CardTitle>
+
                     <CardDescription className={plan.popular ? 'text-gray-600' : 'text-gray-400'}>
                       <div>{plan.descriptionEn}</div>
                       <div className="text-gray-500">{plan.descriptionAr}</div>
@@ -329,14 +331,15 @@ export default function Landing2() {
 
                   <CardContent className="pt-6">
                     <ul className="space-y-4">
-                      {plan.features.map((feature, index) => (
-                        <motion.li key={index} initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} transition={{ duration: 0.4, delay: plan.delay + 0.1 * index }} viewport={{ once: true }} className="flex items-start gap-3">
+                      {plan.features.map((feature, idx) => (
+                        <motion.li key={idx} initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} transition={{ duration: 0.4, delay: plan.delay + 0.1 * idx }} viewport={{ once: true }} className="flex items-start gap-3">
                           <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center mt-0.5 ${plan.popular ? 'bg-black' : 'bg-white'}`}>
                             <Check className={`w-4 h-4 ${plan.popular ? 'text-white' : 'text-black'}`} />
                           </div>
+
                           <div>
-                            <div className={plan.popular ? 'text-gray-700' : 'text-gray-400'}>{feature}</div>
-                            <div className="text-gray-500 text-sm">{/* ترجمة قصيرة إن احتجت */}</div>
+                            <div className={plan.popular ? 'text-gray-700' : 'text-gray-400'}>{feature.en}</div>
+                            <div className="text-gray-500 text-sm">{feature.ar}</div>
                           </div>
                         </motion.li>
                       ))}
@@ -468,17 +471,18 @@ export default function Landing2() {
               <div className="space-y-2">
                 <Label className="text-white">Selected Plan / الخطة المختارة</Label>
                 <div className="flex gap-4">
-                  {['basic', 'premium'].map((planType) => (
+                  {plans.map((p) => (
                     <button
-                      key={planType}
+                      key={p.name}
                       type="button"
-                      onClick={() => setFormData({ ...formData, plan: planType })}
-                      className={`flex-1 p-4 rounded-lg border-2 transition-all ${formData.plan === planType ? 'border-white bg-white/10' : 'border-[#2a2a2a] hover:border-[#3a3a3a]'}`}
+                      onClick={() => setFormData({ ...formData, plan: p.name })}
+                      className={`flex-1 p-4 rounded-lg border-2 transition-all ${formData.plan === p.name ? 'border-white bg-white/10' : 'border-[#2a2a2a] hover:border-[#3a3a3a]'}`}
                     >
-                      <div className="font-semibold text-white capitalize">
-                        {planType === 'basic' ? 'Basic / الأساسي' : 'Premium / البريميوم'}
+                      <div className="font-semibold text-white">
+                        <div>{p.titleEn}</div>
+                        <div className="text-sm text-gray-300">{p.titleAr}</div>
                       </div>
-                      <div className="text-2xl font-bold text-white">﷼{planType === 'basic' ? '75' : '85'}</div>
+                      <div className="text-2xl font-bold text-white">﷼{p.price}</div>
                     </button>
                   ))}
                 </div>
