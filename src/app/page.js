@@ -22,6 +22,7 @@ export default function Landing2() {
   const containerRef = useRef(null)
   const supabase = useSupabaseClient()
 
+  // useScroll يقيس بالنسبة للعنصر المشار إليه بالـ ref
   const { scrollYProgress } = useScroll({ target: containerRef, offset: ['start start', 'end end'] })
 
   const opacity = useTransform(scrollYProgress, [0, 0.2], [1, 0])
@@ -48,7 +49,7 @@ export default function Landing2() {
   }
 
   return (
-    <div ref={containerRef}>
+    <>
       {/* Navigation */}
       <motion.nav initial={{ y: -100 }} animate={{ y: 0 }} transition={{ duration: 0.6, ease: 'easeOut' }} className="fixed top-0 w-full z-50 bg-[#0a0a0a]/80 backdrop-blur-lg border-b border-[#2a2a2a]">
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} className="text-2xl font-bold text-white">
@@ -57,7 +58,6 @@ export default function Landing2() {
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
           <Button
             onClick={() => {
-              // Form 1 (without plans)
               setShowPlansInDialog(false)
               setIsSignUpOpen(true)
             }}
@@ -70,6 +70,7 @@ export default function Landing2() {
 
       {/* Hero Section */}
       <motion.section
+        ref={containerRef}                     {/* <-- مهم: الـ ref هنا */}
         style={{ opacity, scale }}
         className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20"
       >
@@ -127,7 +128,6 @@ export default function Landing2() {
               <Button
                 size="lg"
                 onClick={() => {
-                  // Form 1 (without plans)
                   setShowPlansInDialog(false)
                   setIsSignUpOpen(true)
                 }}
@@ -239,95 +239,6 @@ export default function Landing2() {
                 </Card>
               </motion.div>
             ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Benefits Section */}
-      <section className="py-32 border-t border-[#1a1a1a]">
-        <div className="container mx-auto px-6">
-          <div className="max-w-6xl mx-auto">
-            <motion.div
-              initial={{ opacity: 0, x: -50 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.8 }}
-              viewport={{ once: true }}
-              className="grid md:grid-cols-2 gap-16 items-center"
-            >
-              <div>
-                <h2 className="text-4xl md:text-5xl font-bold text-white mb-6">
-                  Everything You Need to Succeed
-                </h2>
-                <p className="text-lg text-gray-400 mb-8">
-                  Our platform provides comprehensive tools and resources designed to maximize your STEP test performance.
-                </p>
-
-                <div className="space-y-6">
-                  {[
-                    { icon: Target, text: 'Accurate test simulation matching real exam conditions' },
-                    { icon: Brain, text: 'Step-by-step explanations for every answer' },
-                    { icon: Clock, text: 'Timed practice to improve speed and accuracy' },
-                    { icon: Trophy, text: 'Performance tracking and progress analytics' }
-                  ].map((item, index) => (
-                    <motion.div
-                      key={index}
-                      initial={{ opacity: 0, x: -30 }}
-                      whileInView={{ opacity: 1, x: 0 }}
-                      transition={{ duration: 0.5, delay: index * 0.1 }}
-                      viewport={{ once: true }}
-                      className="flex items-start gap-4"
-                    >
-                      <div className="flex-shrink-0 w-12 h-12 bg-white rounded-xl flex items-center justify-center">
-                        <item.icon className="w-6 h-6 text-black" />
-                      </div>
-                      <p className="text-gray-400 text-lg pt-2">{item.text}</p>
-                    </motion.div>
-                  ))}
-                </div>
-              </div>
-
-              <motion.div
-                initial={{ opacity: 0, scale: 0.8 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.8 }}
-                viewport={{ once: true }}
-                className="relative"
-              >
-                <div className="relative bg-[#141414] rounded-3xl p-8 border border-[#2a2a2a]">
-                  <div className="space-y-4">
-                    {[1, 2, 3].map((item, index) => (
-                      <motion.div
-                        key={item}
-                        initial={{ opacity: 0, x: 50 }}
-                        whileInView={{ opacity: 1, x: 0 }}
-                        transition={{ duration: 0.5, delay: 0.2 + index * 0.1 }}
-                        viewport={{ once: true }}
-                        className="bg-[#0a0a0a] rounded-xl p-6 border border-[#2a2a2a]"
-                      >
-                        <div className="flex items-center gap-4 mb-3">
-                          <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center text-black font-bold">
-                            {item}
-                          </div>
-
-                          <div className="flex-1 h-2 bg-[#1a1a1a] rounded-full overflow-hidden">
-                            <motion.div
-                              initial={{ width: 0 }}
-                              whileInView={{ width: `${60 + item * 10}%` }}
-                              transition={{ duration: 1, delay: 0.5 + index * 0.1 }}
-                              viewport={{ once: true }}
-                              className="h-full bg-white"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="h-2 bg-[#1a1a1a] rounded-full mb-2" />
-                        <div className="h-2 bg-[#1a1a1a] rounded-full w-3/4" />
-                      </motion.div>
-                    ))}
-                  </div>
-                </div>
-              </motion.div>
-            </motion.div>
           </div>
         </div>
       </section>
@@ -446,7 +357,6 @@ export default function Landing2() {
                       className={`w-full transition-all transform hover:scale-105 ${plan.popular ? 'bg-black text-white hover:bg-gray-900' : 'bg-white text-black hover:bg-gray-200'}`}
                       size="lg"
                       onClick={() => {
-                        // Form 2 (with plans) when clicking Get Started inside pricing cards
                         setFormData({ ...formData, plan: plan.name.toLowerCase() })
                         setShowPlansInDialog(true)
                         setIsSignUpOpen(true)
@@ -503,7 +413,6 @@ export default function Landing2() {
                 <Button
                   size="lg"
                   onClick={() => {
-                    // Form 2 (with plans) for CTA big Start Preparing Today
                     setShowPlansInDialog(true)
                     setIsSignUpOpen(true)
                   }}
@@ -621,6 +530,6 @@ export default function Landing2() {
           </form>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   )
 }
