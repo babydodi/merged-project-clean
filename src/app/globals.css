@@ -1,11 +1,36 @@
-/* بدل ما تكون عامة */
-.container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 1.5rem;
+@import "tailwindcss";
+
+/* الخطوط */
+@font-face {
+  font-family: 'Minecraft';
+  src: url('/fonts/Minecraft.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
 }
 
-/* خليها مقيدة باللاندينق */
+/* أساسيات عامة */
+body {
+  font-family: 'Tajawal', sans-serif;
+  background-color: #0a0a0a;
+  color: #ffffff;
+  margin: 0;
+}
+
+html { scroll-behavior: smooth; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.06);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* ========================= */
+/* ستايلات خاصة باللاندينق فقط */
+/* ========================= */
 .landing .container {
   max-width: 1200px;
   margin: 0 auto;
@@ -17,6 +42,15 @@
   color: #000;
   border-radius: 0.75rem;
   padding: 0.75rem 1.5rem;
+  font-weight: 600;
+}
+
+.landing .btn-outline {
+  background: transparent;
+  border: 1px solid #2a2a2a;
+  color: #fff;
+  border-radius: 0.75rem;
+  padding: 0.75rem 1.5rem;
 }
 
 .landing .ui-input {
@@ -25,4 +59,27 @@
   color: #fff;
   padding: 0.75rem 1rem;
   border-radius: 0.5rem;
+}
+
+.landing .ui-input:focus {
+  border-color: #ffffff;
+  box-shadow: 0 0 0 4px rgba(255,255,255,0.03);
+}
+
+.landing .pill {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .5rem 1rem;
+  border-radius: 9999px;
+  background-color: #1a1a1a;
+  border: 1px solid #2a2a2a;
+}
+
+.landing .badge-popular {
+  background: #000;
+  color: #fff;
+  padding: .25rem .75rem;
+  font-weight: 700;
+  border-bottom-left-radius: .5rem;
 }
