@@ -50,7 +50,7 @@ export default function Landing2() {
         password: formData.password,
         options: {
           data: { full_name: formData.name, plan: formData.plan },
-          emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/dashboard2` : undefined,
+          emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/dashboard` : undefined,
         },
       })
 
@@ -69,7 +69,7 @@ export default function Landing2() {
         return
       }
 
-      window.location.href = '/dashboard2'
+      window.location.href = '/dashboard'
     } catch (err) {
       console.error(err)
       setErrorMsg('Unexpected error, please try again / حدث خطأ غير متوقع، حاول مرة أخرى')
