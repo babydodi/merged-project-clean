@@ -13,11 +13,11 @@ import { useSupabaseClient } from '@supabase/auth-helpers-react'
 export default function Landing2() {
   const supabase = useSupabaseClient()
   const [isSignUpOpen, setIsSignUpOpen] = useState(false)
+  const [formData, setFormData] = useState({ name: '', email: '', password: '', plan: 'basic' })
   const [dialogMode, setDialogMode] = useState('signup') // 'signup' | 'trial'
   const [loading, setLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
-  const [formData, setFormData] = useState({ name: '', email: '', password: '', plan: 'basic' })
   const containerRef = useRef(null)
 
   const { scrollYProgress } = useScroll({ target: containerRef, offset: ['start start', 'end end'] })
@@ -44,19 +44,13 @@ export default function Landing2() {
       return
     }
 
-    if (!supabase) {
-      setErrorMsg('Supabase client not available. Make sure SupabaseProvider wraps your app.')
-      setLoading(false)
-      return
-    }
-
     try {
       const res = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
         options: {
           data: { full_name: formData.name, plan: formData.plan },
-          emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/dashboard` : undefined,
+          emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/dashboard2` : undefined,
         },
       })
 
@@ -75,15 +69,14 @@ export default function Landing2() {
         return
       }
 
-      window.location.href = '/dashboard'
+      window.location.href = '/dashboard2'
     } catch (err) {
-      console.error('Unexpected signup error', err)
+      console.error(err)
       setErrorMsg('Unexpected error, please try again / حدث خطأ غير متوقع، حاول مرة أخرى')
       setLoading(false)
     }
   }
 
-  // Bilingual content (kept in-line to preserve your design)
   const planDurationEn = '/ 50 day'
   const planDurationAr = '/ 50 يوم'
 
@@ -148,7 +141,7 @@ export default function Landing2() {
   ]
 
   return (
-    <div ref={containerRef}>
+    <div ref={containerRef} className="bg-[#0a0a0a]">
       {/* Navigation */}
       <motion.nav
         initial={{ y: -100 }}
@@ -161,17 +154,19 @@ export default function Landing2() {
             STEP Online / منصة STEP
           </motion.div>
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
-            <Button onClick={() => openDialog('signup')} className="bg-white text-black hover:bg-gray-200 transition-colors">
-              <div className="flex flex-col md:flex-row md:items-center md:gap-2">
-                <span>Get Started</span>
-                <span className="text-sm text-gray-600"> / ابدأ الآن</span>
-              </div>
+            <Button
+              onClick={() => openDialog('signup')}
+              variant="outline"
+              className="border-[#2a2a2a] text-white hover:bg-[#1a1a1a]"
+            >
+              <span>Get Started</span>
+              <span className="text-sm text-gray-400 ml-2">/ ابدأ الآن</span>
             </Button>
           </motion.div>
         </div>
       </motion.nav>
 
-      {/* Hero Section */}
+      {/* Hero */}
       <motion.section style={{ opacity, scale }} className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20">
         <div className="absolute inset-0 overflow-hidden">
           <div
@@ -202,9 +197,9 @@ export default function Landing2() {
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.4 }}
-              className="text-5xl md:text-7xl font-bold mb-6 leading-tight"
+              className="text-5xl md:text-7xl font-bold mb-6 leading-tight text-white"
             >
-              <span className="text-white">Master the STEP English Test</span>
+              Master the <span className="border-b-4 border-white pb-2">STEP English Test</span>
             </motion.h1>
 
             <motion.p
@@ -227,26 +222,22 @@ export default function Landing2() {
             >
               <Button
                 size="lg"
-                onClick={() => openDialog('signup')}
-                className="bg-white text-black hover:bg-gray-200 transition-all transform hover:scale-105 text-lg px-8 py-6"
-              >
-                <div className="flex flex-col md:flex-row md:items-center md:gap-2">
-                  <span>Start Your Journey</span>
-                  <span className="text-sm text-gray-600"> / ابدأ رحلتك</span>
-                </div>
-                <ArrowRight className="ml-2 w-5 h-5" />
-              </Button>
-
-              <Button
-                size="lg"
                 variant="outline"
                 className="border-[#2a2a2a] text-white hover:bg-[#1a1a1a] text-lg px-8 py-6"
                 onClick={() => document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' })}
               >
-                <div className="flex flex-col md:flex-row md:items-center md:gap-2">
-                  <span>View Pricing</span>
-                  <span className="text-sm text-gray-600"> / عرض الأسعار</span>
-                </div>
+                <span>View Pricing</span>
+                <span className="text-sm text-gray-400 ml-2">/ عرض الأسعار</span>
+              </Button>
+
+              <Button
+                size="lg"
+                onClick={() => openDialog('signup')}
+                className="bg-[#141414] text-white hover:bg-[#1f1f1f] transition-all transform hover:scale-105 text-lg px-8 py-6"
+              >
+                <span>Start Your Journey</span>
+                <span className="text-sm text-gray-400 ml-2">/ ابدأ رحلتك</span>
+                <ArrowRight className="ml-2 w-5 h-5" />
               </Button>
             </motion.div>
           </div>
@@ -260,16 +251,10 @@ export default function Landing2() {
         </motion.div>
       </motion.section>
 
-      {/* Features Section */}
+      {/* Features */}
       <section className="py-32 relative border-t border-[#1a1a1a]">
         <div className="container mx-auto px-6">
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
-            viewport={{ once: true }}
-            className="text-center mb-20"
-          >
+          <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} transition={{ duration: 0.8 }} viewport={{ once: true }} className="text-center mb-20">
             <h2 className="text-4xl md:text-5xl font-bold text-white mb-6">Why Choose Our Platform? / لماذا تختار منصتنا؟</h2>
             <p className="text-xl text-gray-400 max-w-2xl mx-auto">Experience the most comprehensive STEP test preparation / اختبر أكثر تحضير شامل لاختبار STEP</p>
           </motion.div>
@@ -311,17 +296,11 @@ export default function Landing2() {
         </div>
       </section>
 
-      {/* Benefits Section */}
+      {/* Benefits */}
       <section className="py-32 border-t border-[#1a1a1a]">
         <div className="container mx-auto px-6">
           <div className="max-w-6xl mx-auto">
-            <motion.div
-              initial={{ opacity: 0, x: -50 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.8 }}
-              viewport={{ once: true }}
-              className="grid md:grid-cols-2 gap-16 items-center"
-            >
+            <motion.div initial={{ opacity: 0, x: -50 }} whileInView={{ opacity: 1, x: 0 }} transition={{ duration: 0.8 }} viewport={{ once: true }} className="grid md:grid-cols-2 gap-16 items-center">
               <div>
                 <h2 className="text-4xl md:text-5xl font-bold text-white mb-6">Everything You Need to Succeed</h2>
                 <p className="text-lg text-gray-400 mb-8">
@@ -352,13 +331,7 @@ export default function Landing2() {
                 </div>
               </div>
 
-              <motion.div
-                initial={{ opacity: 0, scale: 0.8 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.8 }}
-                viewport={{ once: true }}
-                className="relative"
-              >
+              <motion.div initial={{ opacity: 0, scale: 0.8 }} whileInView={{ opacity: 1, scale: 1 }} transition={{ duration: 0.8 }} viewport={{ once: true }} className="relative">
                 <div className="relative bg-[#141414] rounded-3xl p-8 border border-[#2a2a2a]">
                   <div className="space-y-4">
                     {[1, 2, 3].map((item, index) => (
@@ -396,20 +369,12 @@ export default function Landing2() {
         </div>
       </section>
 
-      {/* Pricing Section */}
+      {/* Pricing */}
       <section id="pricing" className="py-32 border-t border-[#1a1a1a]">
         <div className="container mx-auto px-6">
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
-            viewport={{ once: true }}
-            className="text-center mb-20"
-          >
+          <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} transition={{ duration: 0.8 }} viewport={{ once: true }} className="text-center mb-20">
             <h2 className="text-4xl md:text-5xl font-bold text-white mb-6">Choose Your Plan / اختر خطتك</h2>
-            <p className="text-xl text-gray-400 max-w-2xl mx-auto">
-              Select the perfect plan for your STEP test preparation journey / اختر الخطة المناسبة لرحلة تحضيرك لاختبار STEP
-            </p>
+            <p className="text-xl text-gray-400 max-w-2xl mx-auto">Select the perfect plan for your STEP test preparation journey / اختر الخطة المناسبة لرحلة تحضيرك لاختبار STEP</p>
           </motion.div>
 
           <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
@@ -422,29 +387,29 @@ export default function Landing2() {
                 viewport={{ once: true }}
                 whileHover={{ scale: 1.05, transition: { duration: 0.3 } }}
               >
-                <Card className={`relative overflow-hidden h-full ${plan.popular ? 'bg-white border-white' : 'bg-[#141414] border-[#2a2a2a]'}`}>
+                <Card className="relative overflow-hidden h-full bg-[#141414] border-[#2a2a2a]">
                   {plan.popular && (
                     <div className="absolute top-0 right-0">
-                      <div className="bg-black text-white px-4 py-1 text-sm font-semibold">MOST POPULAR / الأكثر شيوعاً</div>
+                      <div className="bg-[#0a0a0a] text-white px-4 py-1 text-sm font-semibold">MOST POPULAR / الأكثر شيوعاً</div>
                     </div>
                   )}
 
                   <CardHeader className="pt-8">
-                    <CardTitle className={`text-3xl ${plan.popular ? 'text-black' : 'text-white'}`}>
+                    <CardTitle className="text-3xl text-white">
                       <div className="flex flex-col">
                         <span>{plan.titleEn}</span>
                         <span className="text-sm text-gray-500">{plan.titleAr}</span>
                       </div>
                     </CardTitle>
-                    <CardDescription className={plan.popular ? 'text-gray-600' : 'text-gray-400'}>
+                    <CardDescription className="text-gray-400">
                       <div>{plan.descriptionEn}</div>
                       <div className="text-gray-500">{plan.descriptionAr}</div>
                     </CardDescription>
                     <div className="mt-6">
-                      <span className={`text-5xl font-bold ${plan.popular ? 'text-black' : 'text-white'}`}>﷼{plan.price}</span>
-                      <span className={`ml-2 ${plan.popular ? 'text-gray-600' : 'text-gray-400'}`}>
+                      <span className="text-5xl font-bold text-white">﷼{plan.price}</span>
+                      <span className="ml-2 text-gray-400">
                         <span className="block">{planDurationEn}</span>
-                        <span className="block text-gray-400">{planDurationAr}</span>
+                        <span className="block text-gray-500">{planDurationAr}</span>
                       </span>
                     </div>
                   </CardHeader>
@@ -460,11 +425,11 @@ export default function Landing2() {
                           viewport={{ once: true }}
                           className="flex items-start gap-3"
                         >
-                          <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center mt-0.5 ${plan.popular ? 'bg-black' : 'bg-white'}`}>
-                            <Check className={`w-4 h-4 ${plan.popular ? 'text-white' : 'text-black'}`} />
+                          <div className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center mt-0.5 bg-white">
+                            <Check className="w-4 h-4 text-black" />
                           </div>
                           <div>
-                            <div className={plan.popular ? 'text-gray-700' : 'text-gray-400'}>{feature.en}</div>
+                            <div className="text-gray-400">{feature.en}</div>
                             <div className="text-gray-500 text-sm">{feature.ar}</div>
                           </div>
                         </motion.li>
@@ -474,13 +439,13 @@ export default function Landing2() {
 
                   <CardFooter className="pt-6">
                     <Button
-                      className={`w-full transition-all transform hover:scale-105 ${plan.popular ? 'bg-black text-white hover:bg-gray-900' : 'bg-white text-black hover:bg-gray-200'}`}
+                      className="w-full transition-all transform hover:scale-105 bg-[#141414] text-white hover:bg-[#1f1f1f] border border-[#2a2a2a]"
                       size="lg"
                       onClick={() => openDialog('trial', plan.name)}
                     >
                       <div className="flex flex-col md:flex-row md:items-center md:gap-2">
                         <span>Get Started</span>
-                        <span className="text-sm text-gray-600"> / ابدأ</span>
+                        <span className="text-sm text-gray-400"> / ابدأ</span>
                       </div>
                       <ArrowRight className="ml-2 w-5 h-5" />
                     </Button>
@@ -492,7 +457,7 @@ export default function Landing2() {
         </div>
       </section>
 
-      {/* CTA Section */}
+      {/* CTA */}
       <section className="py-32 border-t border-[#1a1a1a]">
         <div className="container mx-auto px-6">
           <motion.div
@@ -500,7 +465,7 @@ export default function Landing2() {
             whileInView={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.8 }}
             viewport={{ once: true }}
-            className="max-w-4xl mx-auto bg-white rounded-3xl p-12 md:p-16 text-center relative overflow-hidden"
+            className="max-w-4xl mx-auto bg-[#141414] rounded-3xl p-12 md:p-16 text-center relative overflow-hidden border border-[#2a2a2a]"
           >
             <div className="relative z-10">
               <motion.h2
@@ -508,7 +473,7 @@ export default function Landing2() {
                 whileInView={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: 0.2 }}
                 viewport={{ once: true }}
-                className="text-4xl md:text-5xl font-bold text-black mb-6"
+                className="text-4xl md:text-5xl font-bold text-white mb-6"
               >
                 Ready to Ace Your STEP Test?
               </motion.h2>
@@ -518,7 +483,7 @@ export default function Landing2() {
                 whileInView={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: 0.3 }}
                 viewport={{ once: true }}
-                className="text-xl text-gray-700 mb-10 max-w-2xl mx-auto"
+                className="text-xl text-gray-300 mb-10 max-w-2xl mx-auto"
               >
                 Join hundreds of students who have improved their scores with our comprehensive preparation platform
               </motion.p>
@@ -527,7 +492,7 @@ export default function Landing2() {
                 <Button
                   size="lg"
                   onClick={() => openDialog('signup')}
-                  className="bg-black text-white hover:bg-gray-900 transition-all transform hover:scale-105 text-lg px-10 py-6"
+                  className="bg-[#141414] text-white hover:bg-[#1f1f1f] transition-all transform hover:scale-105 text-lg px-10 py-6 border border-[#2a2a2a]"
                 >
                   Start Preparing Today
                   <Zap className="ml-2 w-5 h-5" />
@@ -553,9 +518,7 @@ export default function Landing2() {
         <DialogContent className="bg-[#141414] border-[#2a2a2a] text-white">
           <DialogHeader>
             <DialogTitle className="text-2xl text-white">Start Your Journey / ابدأ رحلتك</DialogTitle>
-            <DialogDescription className="text-gray-400">
-              Sign up now and begin your STEP test preparation / سجّل الآن وابدأ تحضيرك لاختبار STEP
-            </DialogDescription>
+            <DialogDescription className="text-gray-400">Sign up now and begin your STEP test preparation / سجّل الآن وابدأ تحضيرك لاختبار STEP</DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="space-y-6 mt-4">
@@ -616,7 +579,7 @@ export default function Landing2() {
                       type="button"
                       onClick={() => setFormData({ ...formData, plan: p.name })}
                       className={`flex-1 p-4 rounded-lg border-2 transition-all ${
-                        formData.plan === p.name ? 'border-white bg-white/10' : 'border-[#2a2a2a] hover:border-[#3a3a3a]'
+                        formData.plan === p.name ? 'border-white bg-white/5' : 'border-[#2a2a2a] hover:border-[#3a3a3a]'
                       }`}
                     >
                       <div className="font-semibold text-white">
@@ -630,7 +593,7 @@ export default function Landing2() {
               </div>
             )}
 
-            <Button type="submit" className="w-full bg-white text-black hover:bg-gray-200 transition-colors" size="lg" disabled={loading}>
+            <Button type="submit" className="w-full bg-[#141414] text-white hover:bg-[#1f1f1f] transition-colors border border-[#2a2a2a]" size="lg" disabled={loading}>
               {loading ? 'Creating account… / جاري إنشاء الحساب…' : 'Complete Sign Up / إكمال التسجيل'}
             </Button>
           </form>
