@@ -54,22 +54,35 @@ export default function TestPage() {
   // تتبع التشغيل لكل قطعة
   const playedMapRef = useRef({});
 
-  useEffect(() => { initTest(); /* eslint-disable-next-line */ }, [id]);
+  // مجموع النقاط الممكنة للاختبار
+  const [totalPossible, setTotalPossible] = useState(0);
+  // نتيجة محلية لعرضها بعد الانتهاء (اختياري)
+  const [resultSummary, setResultSummary] = useState(null);
+
+  useEffect(() => {
+    initTest();
+    /* eslint-disable-next-line */
+  }, [id]);
 
   async function initTest() {
     try {
-      if (!id) { setLoading(false); return; }
+      if (!id) {
+        setLoading(false);
+        return;
+      }
       setLoading(true);
 
       // إنشاء attempt
       const { data: userData } = await supabase.auth.getUser();
       const currentUser = userData?.user || null;
       const payload = currentUser ? { test_id: id, user_id: currentUser.id } : { test_id: id };
+
       const { data: attempt, error: attemptErr } = await supabase
         .from('test_attempts')
         .insert(payload)
         .select()
         .single();
+
       if (attemptErr) throw attemptErr;
       setAttemptId(attempt.id);
 
@@ -79,6 +92,7 @@ export default function TestPage() {
         .select('*')
         .eq('id', id)
         .single();
+
       if (testErr) throw testErr;
       setTest(testData);
 
@@ -88,10 +102,12 @@ export default function TestPage() {
         .select('id, type, title, idx, duration_seconds')
         .eq('test_id', id)
         .order('idx', { ascending: true });
+
       if (chErr) throw chErr;
 
       // تحميل محتوى كل فصل حسب نوعه
       const assembled = [];
+
       for (const ch of chaptersData || []) {
         if (ch.type === 'listening') {
           const { data: pieces, error: lpErr } = await supabase
@@ -99,11 +115,12 @@ export default function TestPage() {
             .select(
               `id, audio_url, transcript, idx,
               listening_questions (
-                id, idx, question_text, options, answer, hint, explanation
+                id, idx, question_text, options, answer, hint, explanation, points
               )`
             )
             .eq('chapter_id', ch.id)
             .order('idx', { ascending: true });
+
           if (lpErr) throw lpErr;
           assembled.push({ ...ch, pieces: pieces || [] });
         } else if (ch.type === 'reading') {
@@ -112,11 +129,12 @@ export default function TestPage() {
             .select(
               `id, passage_title, passage, idx,
               reading_questions (
-                id, idx, question_text, options, answer, hint, explanation, base_text, underlined_words, underlined_positions
+                id, idx, question_text, options, answer, hint, explanation, base_text, underlined_words, underlined_positions, points
               )`
             )
             .eq('chapter_id', ch.id)
             .order('idx', { ascending: true });
+
           if (rpErr) throw rpErr;
 
           // تفكيك الفقرات إذا كانت مرقمة
@@ -138,9 +156,10 @@ export default function TestPage() {
         } else if (ch.type === 'grammar') {
           const { data: questions, error: gErr } = await supabase
             .from('grammar_questions')
-            .select('id, idx, question_text, options, answer, hint, explanation, category, base_text, underlined_words, underlined_positions')
+            .select('id, idx, question_text, options, answer, hint, explanation, category, base_text, underlined_words, underlined_positions, points')
             .eq('chapter_id', ch.id)
             .order('idx', { ascending: true });
+
           if (gErr) throw gErr;
           assembled.push({ ...ch, questions: questions || [] });
         }
@@ -156,7 +175,30 @@ export default function TestPage() {
         return { ...ch, duration_seconds: enforcedDuration };
       });
 
+      // حساب مجموع النقاط الممكنة من الأسئلة المحمّلة
+      let total = 0;
+      for (const ch of enforced) {
+        if (ch.type === 'listening') {
+          for (const p of (ch.pieces || [])) {
+            for (const q of (p.listening_questions || [])) {
+              total += Number(q.points || 1);
+            }
+          }
+        } else if (ch.type === 'reading') {
+          for (const p of (ch.pieces || [])) {
+            for (const q of (p.reading_questions || [])) {
+              total += Number(q.points || 1);
+            }
+          }
+        } else if (ch.type === 'grammar') {
+          for (const q of (ch.questions || [])) {
+            total += Number(q.points || 1);
+          }
+        }
+      }
+
       setChapters(enforced);
+      setTotalPossible(total);
 
       // إعادة الضبط
       setCurrentChapterIndex(0);
@@ -221,7 +263,7 @@ export default function TestPage() {
     return currentChapter.pieces?.[currentPieceIndex] || null;
   }, [currentChapter, currentPieceIndex]);
 
-  // حفظ الإجابات في الفصل الحالي
+  // حفظ الإجابات في الفصل الحالي (يشمل points_awarded)
   async function saveAllAnswersInCurrentChapter() {
     if (!attemptId || !currentChapter) return;
     const rows = [];
@@ -231,14 +273,18 @@ export default function TestPage() {
         for (const q of (p.listening_questions || [])) {
           const selected = answers[q.id];
           const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
+          const pointsAwarded = isCorrect ? Number(q.points || 1) : 0;
+
           rows.push({
             attempt_id: attemptId,
             question_id: q.id,
             question_type: 'listening',
             selected_choice: selected != null ? String(selected) : null,
             is_correct: isCorrect,
+            points_awarded: pointsAwarded,
             answered_at: new Date().toISOString(),
           });
+
           if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
         }
       }
@@ -247,14 +293,18 @@ export default function TestPage() {
         for (const q of (p.reading_questions || [])) {
           const selected = answers[q.id];
           const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
+          const pointsAwarded = isCorrect ? Number(q.points || 1) : 0;
+
           rows.push({
             attempt_id: attemptId,
             question_id: q.id,
             question_type: 'reading',
             selected_choice: selected != null ? String(selected) : null,
             is_correct: isCorrect,
+            points_awarded: pointsAwarded,
             answered_at: new Date().toISOString(),
           });
+
           if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
         }
       }
@@ -262,14 +312,18 @@ export default function TestPage() {
       for (const q of (currentChapter.questions || [])) {
         const selected = answers[q.id];
         const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
+        const pointsAwarded = isCorrect ? Number(q.points || 1) : 0;
+
         rows.push({
           attempt_id: attemptId,
           question_id: q.id,
           question_type: 'grammar',
           selected_choice: selected != null ? String(selected) : null,
           is_correct: isCorrect,
+          points_awarded: pointsAwarded,
           answered_at: new Date().toISOString(),
         });
+
         if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
       }
     }
@@ -290,7 +344,12 @@ export default function TestPage() {
     setCurrentPieceIndex(0);
     setValidationError('');
     // إيقاف الصوت المفتوح
-    try { if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; } } catch {}
+    try {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+    } catch {}
   }, [currentChapterIndex]);
 
   // منطق الصوت — زر تشغيل فقط وقفل منع الإيقاف/التخطي
@@ -307,6 +366,7 @@ export default function TestPage() {
       el.removeAttribute('src');
       el.src = '';
       el.load();
+
       setTimeout(() => {
         if (!audioRef.current) return;
         if (currentPiece?.audio_url) {
@@ -412,46 +472,64 @@ export default function TestPage() {
     const qIds = [];
     if (!chapter) return qIds;
     if (chapter.type === 'listening') {
-      for (const p of (chapter.pieces || [])) for (const q of (p.listening_questions || [])) if (!answeredMap[q.id]) qIds.push(q.id);
+      for (const p of (chapter.pieces || []))
+        for (const q of (p.listening_questions || []))
+          if (!answeredMap[q.id]) qIds.push(q.id);
     } else if (chapter.type === 'reading') {
-      for (const p of (chapter.pieces || [])) for (const q of (p.reading_questions || [])) if (!answeredMap[q.id]) qIds.push(q.id);
+      for (const p of (chapter.pieces || []))
+        for (const q of (p.reading_questions || []))
+          if (!answeredMap[q.id]) qIds.push(q.id);
     } else if (chapter.type === 'grammar') {
-      for (const q of (chapter.questions || [])) if (!answeredMap[q.id]) qIds.push(q.id);
+      for (const q of (chapter.questions || []))
+        if (!answeredMap[q.id]) qIds.push(q.id);
     }
     return qIds;
   };
 
   async function finalizeScoresAndFinish() {
     if (!attemptId) return;
+
+    // جلب محاولات الأسئلة مع نقاط
     const { data: attemptsRows = [], error: attemptsErr } = await supabase
       .from('question_attempts')
-      .select('question_id, question_type, selected_choice, is_correct')
+      .select('question_id, question_type, selected_choice, is_correct, points_awarded')
       .eq('attempt_id', attemptId);
-    if (attemptsErr) { console.error('fetch question_attempts error', attemptsErr); return; }
 
-    const stats = { listening: { total: 0, correct: 0 }, reading: { total: 0, correct: 0 }, grammar: { total: 0, correct: 0 } };
+    if (attemptsErr) {
+      console.error('fetch question_attempts error', attemptsErr);
+      return;
+    }
+
+    // حساب مجموع النقاط الممنوحة
+    let totalAwarded = 0;
     for (const r of attemptsRows) {
-      if (r.question_type === 'listening') { stats.listening.total += 1; if (r.is_correct) stats.listening.correct += 1; }
-      else if (r.question_type === 'reading') { stats.reading.total += 1; if (r.is_correct) stats.reading.correct += 1; }
-      else if (r.question_type === 'grammar') { stats.grammar.total += 1; if (r.is_correct) stats.grammar.correct += 1; }
+      totalAwarded += Number(r.points_awarded || 0);
     }
 
-    // توزيع بسيط للدرجات: 100 على المجموع
-    const totalQuestions = stats.listening.total + stats.reading.total + stats.grammar.total;
-    const totalCorrect = stats.listening.correct + stats.reading.correct + stats.grammar.correct;
-    const percentage = totalQuestions ? Math.round((totalCorrect / totalQuestions) * 100 * 100) / 100 : 0;
-    const totalScore = Math.round(percentage); // أو عدّل الوزن حسب رغبتك
+    // استخدم totalPossible المحسوب عند initTest (في الحالة)
+    const totalPossibleLocal = Number(totalPossible || 0);
 
-    // حفظ النتيجة النهائية
-    const { data: existing = [], error: exErr } = await supabase.from('user_results').select('id').eq('attempt_id', attemptId).limit(1);
-    if (exErr) console.error('check existing user_results', exErr);
-    if (!existing || existing.length === 0) {
-      const { error: resultErr } = await supabase.from('user_results').insert({ attempt_id: attemptId, score: totalScore, total_questions: totalQuestions, percentage });
-      if (resultErr) console.error('Error saving user result:', resultErr);
-    }
+    // حساب النسبة
+    const percentage = totalPossibleLocal ? Math.round((totalAwarded / totalPossibleLocal) * 10000) / 100 : 0;
+    const totalScore = Math.round(percentage);
 
+    // حفظ النتيجة (upsert حسب attempt_id)
+    const { error: upsertErr } = await supabase.from('user_results').upsert({
+      attempt_id: attemptId,
+      score: totalScore,
+      total_questions: attemptsRows.length,
+      percentage,
+      total_possible: totalPossibleLocal,
+    }, { onConflict: ['attempt_id'] });
+
+    if (upsertErr) console.error('Error saving user result:', upsertErr);
+
+    // تحديث completed_at في test_attempts
     const { error: completeErr } = await supabase.from('test_attempts').update({ completed_at: new Date().toISOString() }).eq('id', attemptId);
     if (completeErr) console.error('Error updating attempt completion time:', completeErr);
+
+    // حفظ ملخص محلي للعرض
+    setResultSummary({ totalAwarded, totalPossible: totalPossibleLocal, percentage, totalScore });
 
     setShowResult(true);
     stopChapterTimer();
@@ -463,7 +541,10 @@ export default function TestPage() {
     const unanswered = getUnansweredInChapter(currentChapter);
     if (unanswered.length > 0) {
       const ok = window.confirm(`فيه ${unanswered.length} سؤال غير مُجاب في هذا الفصل. تبي تتابع للفصل التالي؟`);
-      if (!ok) { goToQuestionInCurrent(unanswered[0]); return; }
+      if (!ok) {
+        goToQuestionInCurrent(unanswered[0]);
+        return;
+      }
     }
 
     if (currentChapterIndex < chapters.length - 1) {
@@ -485,16 +566,21 @@ export default function TestPage() {
         for (const q of (p.listening_questions || [])) {
           const selected = answers[q.id];
           const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
+          const pointsAwarded = isCorrect ? Number(q.points || 1) : 0;
+
           rows.push({
             attempt_id: attemptId,
             question_id: q.id,
             question_type: 'listening',
             selected_choice: selected != null ? String(selected) : null,
             is_correct: isCorrect,
+            points_awarded: pointsAwarded,
             answered_at: new Date().toISOString(),
           });
+
           if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
         }
+
         if (rows.length) {
           const { error } = await supabase.from('question_attempts').upsert(rows, { onConflict: ['attempt_id', 'question_id'] });
           if (error) console.error('save listening piece answers error', error);
@@ -507,6 +593,7 @@ export default function TestPage() {
         setCurrentPieceIndex(i => i + 1);
         return;
       }
+
       // آخر قطعة -> انتقل للفصل التالي
       await saveAllAnswersInCurrentChapter();
       goToNextChapterOrFinish();
@@ -521,16 +608,21 @@ export default function TestPage() {
         for (const q of (p.reading_questions || [])) {
           const selected = answers[q.id];
           const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
+          const pointsAwarded = isCorrect ? Number(q.points || 1) : 0;
+
           rows.push({
             attempt_id: attemptId,
             question_id: q.id,
             question_type: 'reading',
             selected_choice: selected != null ? String(selected) : null,
             is_correct: isCorrect,
+            points_awarded: pointsAwarded,
             answered_at: new Date().toISOString(),
           });
+
           if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
         }
+
         if (rows.length) {
           const { error } = await supabase.from('question_attempts').upsert(rows, { onConflict: ['attempt_id', 'question_id'] });
           if (error) console.error('save reading piece answers error', error);
@@ -542,6 +634,7 @@ export default function TestPage() {
         setCurrentPieceIndex(i => i + 1);
         return;
       }
+
       // آخر قطعة
       await saveAllAnswersInCurrentChapter();
       goToNextChapterOrFinish();
@@ -554,16 +647,21 @@ export default function TestPage() {
       if (q) {
         const selected = answers[q.id];
         const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
+        const pointsAwarded = isCorrect ? Number(q.points || 1) : 0;
+
         const row = {
           attempt_id: attemptId,
           question_id: q.id,
           question_type: 'grammar',
           selected_choice: selected != null ? String(selected) : null,
           is_correct: isCorrect,
+          points_awarded: pointsAwarded,
           answered_at: new Date().toISOString(),
         };
+
         const { error } = await supabase.from('question_attempts').upsert([row], { onConflict: ['attempt_id', 'question_id'] });
         if (error) console.error('save grammar question error', error);
+
         if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
       }
 
@@ -572,6 +670,7 @@ export default function TestPage() {
         setCurrentPieceIndex(i => i + 1);
         return;
       }
+
       // آخر سؤال
       await saveAllAnswersInCurrentChapter();
       goToNextChapterOrFinish();
@@ -589,20 +688,25 @@ export default function TestPage() {
         for (const q of (p.listening_questions || [])) {
           const selected = answers[q.id];
           const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
+          const pointsAwarded = isCorrect ? Number(q.points || 1) : 0;
+
           rows.push({
             attempt_id: attemptId,
             question_id: q.id,
             question_type: 'listening',
             selected_choice: selected != null ? String(selected) : null,
             is_correct: isCorrect,
+            points_awarded: pointsAwarded,
             answered_at: new Date().toISOString(),
           });
         }
+
         if (rows.length) {
           const { error } = await supabase.from('question_attempts').upsert(rows, { onConflict: ['attempt_id', 'question_id'] });
           if (error) console.error('save prev listening answers error', error);
         }
       }
+
       if (currentPieceIndex > 0) {
         stopAudioHardReset();
         setCurrentPieceIndex(i => i - 1);
@@ -617,20 +721,25 @@ export default function TestPage() {
         for (const q of (p.reading_questions || [])) {
           const selected = answers[q.id];
           const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
+          const pointsAwarded = isCorrect ? Number(q.points || 1) : 0;
+
           rows.push({
             attempt_id: attemptId,
             question_id: q.id,
             question_type: 'reading',
             selected_choice: selected != null ? String(selected) : null,
             is_correct: isCorrect,
+            points_awarded: pointsAwarded,
             answered_at: new Date().toISOString(),
           });
         }
+
         if (rows.length) {
           const { error } = await supabase.from('question_attempts').upsert(rows, { onConflict: ['attempt_id', 'question_id'] });
           if (error) console.error('save prev reading answers error', error);
         }
       }
+
       if (currentPieceIndex > 0) setCurrentPieceIndex(i => i - 1);
       return;
     }
@@ -640,33 +749,47 @@ export default function TestPage() {
       if (q) {
         const selected = answers[q.id];
         const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
+        const pointsAwarded = isCorrect ? Number(q.points || 1) : 0;
+
         const row = {
           attempt_id: attemptId,
           question_id: q.id,
           question_type: 'grammar',
           selected_choice: selected != null ? String(selected) : null,
           is_correct: isCorrect,
+          points_awarded: pointsAwarded,
           answered_at: new Date().toISOString(),
         };
+
         const { error } = await supabase.from('question_attempts').upsert([row], { onConflict: ['attempt_id', 'question_id'] });
         if (error) console.error('save prev grammar question error', error);
       }
+
       if (currentPieceIndex > 0) setCurrentPieceIndex(i => i - 1);
     }
   };
 
-  const goToReview = () => { if (!attemptId) return; router.push(`/attempts/${attemptId}/review`); };
+  const goToReview = () => {
+    if (!attemptId) return;
+    router.push(`/attempts/${attemptId}/review`);
+  };
 
-  if (loading) return (<div className="p-6">جاري تحميل الاختبار...</div>);
+  if (loading) return (
+    <div className="p-6 text-center">جاري تحميل الاختبار...</div>
+  );
 
   if (showResult) {
     return (
       <div className="p-6">
         <h1 className="text-2xl font-bold mb-4">{test?.title}</h1>
-        <p className="mb-4">اكتمل الاختبار. يمكنك مراجعة محاولتك الآن.</p>
-        <div className="flex gap-3">
-          <Button onClick={() => router.push('/dashboard')} variant="outline">الرئيسية</Button>
-          <Button onClick={goToReview}>راجع محاولتي</Button>
+        <div className="bg-white p-6 rounded shadow">
+          <h2 className="text-lg font-semibold mb-2">اكتمل الاختبار</h2>
+          <p className="mb-2">النتيجة: <strong>{resultSummary ? `${resultSummary.percentage}%` : '—'}</strong></p>
+          <p className="mb-4">النقاط المحققة: <strong>{resultSummary ? resultSummary.totalAwarded : '—'}</strong> من <strong>{resultSummary ? resultSummary.totalPossible : totalPossible}</strong></p>
+          <div className="flex gap-3">
+            <Button onClick={() => router.push('/dashboard')} variant="outline">الرئيسية</Button>
+            <Button onClick={goToReview}>راجع محاولتي</Button>
+          </div>
         </div>
       </div>
     );
@@ -674,16 +797,13 @@ export default function TestPage() {
 
   return (
     <div className="p-6">
-      <header className="mb-4 flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold">{test?.title}</h2>
-          <h3 className="text-slate-600">{currentChapter?.title}</h3>
-        </div>
-        <div className="flex items-center gap-2 text-slate-700">
-          <Clock className="w-5 h-5" />
-          <span className="font-semibold">{formatMMSS(chapterRemainingSecs ?? 0)}</span>
-        </div>
-      </header>
+      <h2 className="text-xl font-bold mb-4">{test?.title}</h2>
+
+      <h3 className="text-lg mb-2">{currentChapter?.title}</h3>
+      <div className="mb-4 flex items-center justify-between">
+        <div className="text-sm text-slate-600">الوقت المتبقي: {formatMMSS(chapterRemainingSecs ?? 0)}</div>
+        <div className="text-sm text-slate-600">مجموع النقاط الممكنة: {totalPossible}</div>
+      </div>
 
       <div className="bg-slate-200 h-1.5 mb-6">
         <div className="h-full bg-blue-600 transition-all" style={{ width: `${((currentChapterIndex + 1) / Math.max(chapters.length, 1)) * 100}%` }} />
@@ -770,6 +890,7 @@ export default function TestPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white rounded-lg p-6 shadow-sm max-h-[70vh] overflow-y-auto text-left">
             <h3 className="text-xl font-bold mb-4">{currentPiece.passage_title}</h3>
+
             {Array.isArray(currentPiece.passage_paragraphs) ? (
               currentPiece.passage_paragraphs.map((para, pi) => (
                 <p key={pi} className="mb-4 leading-relaxed text-slate-700">
@@ -842,7 +963,6 @@ export default function TestPage() {
                 {((Array.isArray(q.underlined_words) && q.underlined_words.length > 0) ||
                   (Array.isArray(q.underlined_positions) && q.underlined_positions.length > 0)) && q.base_text && (
                   <div className="mb-4 text-slate-700">
-                    {/* عرض بسيط للنص الأساسي؛ إذا تحتاج عرض دقيق بالمواقع أقدر أضيفه */}
                     <div className="font-semibold mb-2">النص:</div>
                     <div className="text-slate-800 whitespace-pre-line">{q.base_text}</div>
                   </div>
