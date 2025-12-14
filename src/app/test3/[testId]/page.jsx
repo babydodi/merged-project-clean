@@ -22,6 +22,28 @@ const REQUIRED_MINUTES_BY_INDEX = {
 // مساعد لتحويل دقائق إلى ثواني
 const minsToSecs = (m) => Math.max(0, Math.round(m * 60));
 
+/* ---------- مكوّن عرض التنبيه (Banner) ---------- */
+function AlertBanner({ alert, onClose }) {
+  if (!alert) return null;
+  return (
+    <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 w-[min(900px,95%)]">
+      <div className="bg-yellow-100 border border-yellow-300 text-yellow-900 px-4 py-3 rounded shadow-md flex items-start justify-between">
+        <div className="flex items-start gap-3">
+          <Clock className="w-5 h-5 mt-0.5" />
+          <div>
+            <div className="font-semibold">{alert.title}</div>
+            <div className="text-sm">{alert.message}</div>
+          </div>
+        </div>
+        <div className="ml-4">
+          <Button variant="outline" onClick={onClose}>إغلاق</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- الصفحة الرئيسية ---------- */
 export default function TestPage() {
   const { testId: id } = useParams();
   const router = useRouter();
@@ -51,12 +73,11 @@ export default function TestPage() {
   const [isLockedPlay, setIsLockedPlay] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // تتبع التشغيل لكل قطعة
-  const playedMapRef = useRef({});
+  // تتبع التشغيل لكل قطعة — لضمان التشغيل التلقائي مرة واحدة فقط لكل قطعة
+  const playedMapRef = useRef({}); // pieceId -> true
 
   // مجموع النقاط الممكنة للاختبار
   const [totalPossible, setTotalPossible] = useState(0);
-  // نتيجة محلية لعرضها بعد الانتهاء (اختياري)
   const [resultSummary, setResultSummary] = useState(null);
 
   // Hint / Reveal state maps
@@ -65,7 +86,11 @@ export default function TestPage() {
   const [revealedHintMap, setRevealedHintMap] = useState({}); // questionId -> true
   const [revealedAnswerMap, setRevealedAnswerMap] = useState({}); // questionId -> true
 
-  // لتجنب تكرار التنبيهات الزمنية
+  // تنبيهات داخل الواجهة (بديل window.alert)
+  const [currentAlert, setCurrentAlert] = useState(null);
+  const alertTimeoutRef = useRef(null);
+
+  // لتجنب تكرار التنبيهات الزمنية لكل فصل/عتبة
   const alertedRef = useRef({}); // chapterIndex -> Set(thresholdSecs)
 
   useEffect(() => {
@@ -220,6 +245,7 @@ export default function TestPage() {
       setRevealedHintMap({});
       setRevealedAnswerMap({});
       alertedRef.current = {};
+      playedMapRef.current = {};
 
       // بدء المؤقت للفصل الأول
       const firstDuration = enforced[0]?.duration_seconds ?? minsToSecs(13);
@@ -236,7 +262,6 @@ export default function TestPage() {
   function startChapterTimer(totalSecs) {
     clearInterval(timerRef.current);
     setChapterRemainingSecs(totalSecs);
-    // reset alerted for this chapter index
     if (!alertedRef.current[currentChapterIndex]) alertedRef.current[currentChapterIndex] = new Set();
 
     timerRef.current = setInterval(() => {
@@ -365,11 +390,10 @@ export default function TestPage() {
         audioRef.current.currentTime = 0;
       }
     } catch {}
-    // reset alerted set for this chapter if not present
     if (!alertedRef.current[currentChapterIndex]) alertedRef.current[currentChapterIndex] = new Set();
   }, [currentChapterIndex]);
 
-  // منطق الصوت — الآن: تحميل المصدر وتشغيل تلقائيًا
+  // منطق الصوت — تشغيل تلقائي مرة واحدة لكل قطعة فقط
   useEffect(() => {
     setIsLockedPlay(false);
     setIsPlaying(false);
@@ -389,18 +413,27 @@ export default function TestPage() {
         if (currentPiece?.audio_url) {
           audioRef.current.src = currentPiece.audio_url;
           audioRef.current.load();
-          // حاول التشغيل تلقائيًا
-          audioRef.current.play().then(() => {
-            setIsPlaying(true);
-            // لا نمنع الإيقاف التام لكن نسمح للمستخدم بإيقافه بعد التشغيل
-            setIsLockedPlay(false);
-            if (currentPiece?.id) playedMapRef.current[currentPiece.id] = true;
-          }).catch((err) => {
-            // قد يمنع المتصفح التشغيل التلقائي؛ لا نغلق التجربة، نعرض زر تشغيل
-            console.warn('autoplay failed', err);
+
+          // تشغيل تلقائي فقط إذا لم تُشغّل هذه القطعة سابقًا
+          const alreadyPlayed = !!playedMapRef.current[currentPiece.id];
+          if (!alreadyPlayed) {
+            audioRef.current.play().then(() => {
+              setIsPlaying(true);
+              // نعتبرها "مشغلة تلقائياً" مرة واحدة فقط
+              playedMapRef.current[currentPiece.id] = true;
+              // لا نمنع المستخدم من إيقافها بعد التشغيل التلقائي
+              setIsLockedPlay(false);
+            }).catch((err) => {
+              // المتصفح قد يمنع التشغيل التلقائي؛ نترك عناصر التحكم للمستخدم
+              console.warn('autoplay failed', err);
+              setIsPlaying(false);
+              setIsLockedPlay(false);
+            });
+          } else {
+            // إذا شغّلت سابقًا، لا نحاول التشغيل التلقائي مجدداً
             setIsPlaying(false);
             setIsLockedPlay(false);
-          });
+          }
         }
       }, 80);
     } catch (e) {
@@ -413,7 +446,6 @@ export default function TestPage() {
     if (!el) return;
 
     function onPause() {
-      // إذا كان القفل مفعلًا نعيد التشغيل فورًا، وإلا نوقف حالة التشغيل
       if (isLockedPlay) {
         el.play().catch(() => {});
       } else {
@@ -500,38 +532,38 @@ export default function TestPage() {
     return qIds;
   };
 
-  // مراقبة الوقت المتبقي لإظهار التنبيهات عند العتبات المطلوبة
+  // مراقبة الوقت المتبقي لإظهار التنبيهات عند العتبات المطلوبة (باستخدام AlertBanner)
   useEffect(() => {
     if (!currentChapter || chapterRemainingSecs == null) return;
     const totalSecs = currentChapter.duration_seconds || 0;
     const chapterIdx = currentChapterIndex;
     const alertedSet = alertedRef.current[chapterIdx] || new Set();
 
-    // قواعد العتبات:
-    // إذا المدة بين 10 و 13 دقيقة -> تنبيه عند 5 دقائق
-    // إذا المدة >= 20 دقيقة -> تنبيه عند 10 و 5 دقائق
     const thresholds = [];
     if (totalSecs >= minsToSecs(10) && totalSecs <= minsToSecs(13)) {
       thresholds.push(minsToSecs(5));
     } else if (totalSecs >= minsToSecs(20)) {
       thresholds.push(minsToSecs(10), minsToSecs(5));
     } else if (totalSecs >= minsToSecs(10) && totalSecs < minsToSecs(20)) {
-      // حالات وسطية: نضيف تنبيه عند 5 دقائق كحد أدنى
       thresholds.push(minsToSecs(5));
     }
 
     for (const t of thresholds) {
       if (chapterRemainingSecs <= t && !alertedSet.has(t)) {
-        // سجل التنبيه حتى لا يتكرر
         alertedSet.add(t);
         alertedRef.current[chapterIdx] = alertedSet;
-        // عرض التنبيه
+
+        // عرض تنبيه داخل الواجهة
         const minutesLeft = Math.ceil(t / 60);
-        try {
-          window.alert(`تبقى ${minutesLeft} دقيقة${minutesLeft > 1 ? 'ً' : ''} في هذا القسم. استخدم الوقت بحكمة.`);
-        } catch (e) {
-          console.log('alert:', `تبقى ${minutesLeft} دقيقة في هذا القسم.`);
-        }
+        const title = `تبقى ${minutesLeft} دقيقة${minutesLeft > 1 ? '' : ''}`;
+        const message = `الوقت المتبقي في هذا القسم الآن ${formatMMSS(chapterRemainingSecs)}. استخدم الوقت بحكمة.`;
+
+        // عرض التنبيه لبضع ثوانٍ
+        setCurrentAlert({ title, message });
+        if (alertTimeoutRef.current) clearTimeout(alertTimeoutRef.current);
+        alertTimeoutRef.current = setTimeout(() => {
+          setCurrentAlert(null);
+        }, 7000);
       }
     }
   }, [chapterRemainingSecs, currentChapterIndex, currentChapter]);
@@ -587,7 +619,6 @@ export default function TestPage() {
   }
 
   async function goToNextChapterOrFinish() {
-    // تحقق من الأسئلة غير المُجابة إن كان هناك وقت
     const unanswered = getUnansweredInChapter(currentChapter);
     if (unanswered.length > 0) {
       const ok = window.confirm(`فيه ${unanswered.length} سؤال غير مُجاب في هذا الفصل. تبي تتابع للفصل التالي؟`);
@@ -609,7 +640,6 @@ export default function TestPage() {
     if (!currentChapter) return;
 
     if (currentChapter.type === 'listening') {
-      // حفظ إجابات قطعة الاستماع الحالية فقط
       const p = currentChapter.pieces?.[currentPieceIndex];
       if (p) {
         const rows = [];
@@ -644,14 +674,12 @@ export default function TestPage() {
         return;
       }
 
-      // آخر قطعة -> انتقل للفصل التالي
       await saveAllAnswersInCurrentChapter();
       goToNextChapterOrFinish();
       return;
     }
 
     if (currentChapter.type === 'reading') {
-      // حفظ إجابات قطعة القراءة الحالية فقط
       const p = currentChapter.pieces?.[currentPieceIndex];
       if (p) {
         const rows = [];
@@ -685,14 +713,12 @@ export default function TestPage() {
         return;
       }
 
-      // آخر قطعة
       await saveAllAnswersInCurrentChapter();
       goToNextChapterOrFinish();
       return;
     }
 
     if (currentChapter.type === 'grammar') {
-      // حفظ سؤال القواعد الحالي ثم التنقل
       const q = currentChapter.questions?.[currentPieceIndex];
       if (q) {
         const selected = answers[q.id];
@@ -721,7 +747,6 @@ export default function TestPage() {
         return;
       }
 
-      // آخر سؤال
       await saveAllAnswersInCurrentChapter();
       goToNextChapterOrFinish();
       return;
@@ -843,6 +868,15 @@ export default function TestPage() {
     setRevealedAnswerMap(prev => ({ ...prev, [questionId]: true }));
   };
 
+  // إغلاق التنبيه اليدوي
+  const closeAlert = () => {
+    setCurrentAlert(null);
+    if (alertTimeoutRef.current) {
+      clearTimeout(alertTimeoutRef.current);
+      alertTimeoutRef.current = null;
+    }
+  };
+
   if (loading) return (
     <div className="p-6 text-center">جاري تحميل الاختبار...</div>
   );
@@ -866,6 +900,9 @@ export default function TestPage() {
 
   return (
     <div className="p-6">
+      {/* Alert Banner */}
+      <AlertBanner alert={currentAlert} onClose={closeAlert} />
+
       <h2 className="text-xl font-bold mb-4">{test?.title}</h2>
 
       <h3 className="text-lg mb-2">{currentChapter?.title}</h3>
@@ -897,15 +934,13 @@ export default function TestPage() {
 
               {!isPlaying && (
                 <div className="mt-3">
-                  <div className="text-sm text-slate-500 mt-2">المقطع سيبدأ تلقائياً عند تحميله. إذا لم يبدأ، اضغط زر التشغيل.</div>
+                  <div className="text-sm text-slate-500 mt-2">المقطع سيحاول التشغيل تلقائياً مرة واحدة عند تحميله. إذا لم يبدأ، اضغط زر التشغيل.</div>
                 </div>
               )}
 
               {isLockedPlay && (
                 <div className="text-sm text-red-600 mt-3">المقطع قيد التشغيل وممنوع الإيقاف أو التخطي.</div>
               )}
-
-              {/* مهم: لا نعرض transcript إطلاقًا */}
             </div>
           </div>
 
@@ -945,7 +980,6 @@ export default function TestPage() {
                   ))}
                 </div>
 
-                {/* عرض hint/answer إذا تم الكشف */}
                 {revealedHintMap[q.id] && (
                   <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded">
                     <div className="text-sm text-slate-800 mb-2"><strong>Hint:</strong> {q.hint || 'لا يوجد تلميح متاح.'}</div>
@@ -1121,40 +1155,58 @@ export default function TestPage() {
           q = (currentChapter.questions || []).find(x => x.id === hintModalQuestionId) || null;
         }
 
+        const isHintRevealed = !!revealedHintMap[hintModalQuestionId];
+        const isAnswerRevealed = !!revealedAnswerMap[hintModalQuestionId];
+
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
             <div className="bg-white rounded-lg max-w-xl w-full p-6">
               <h3 className="text-lg font-semibold mb-3">تنبيه قبل استخدام التلميح</h3>
+
               <p className="text-sm text-slate-700 mb-4">
                 استعمال هذه الخاصية بكثرة قد يؤثر على سرعة تقدمك وتعلمك. هل تريد المتابعة وكشف التلميح؟
               </p>
 
-              <div className="flex gap-3 justify-end">
-                <Button variant="outline" onClick={closeHintModal}>إلغاء</Button>
-                <Button onClick={() => {
-                  // كشف التلميح
-                  revealHint(hintModalQuestionId);
-                  closeHintModal();
-                }}>Reveal hint</Button>
-              </div>
+              {/* الصندوق الذي سيحتوي التلميح والإجابة في نفس البوكس */}
+              <div className="mb-4 p-4 border rounded bg-yellow-50 border-yellow-200">
+                {!isHintRevealed ? (
+                  <div className="text-sm text-slate-800 mb-3">
+                    <strong>التلميح:</strong> (مخفي — اضغط Reveal hint لكشفه)
+                  </div>
+                ) : (
+                  <div className="text-sm text-slate-800 mb-3">
+                    <strong>التلميح:</strong> {q?.hint || 'لا يوجد تلميح متاح.'}
+                  </div>
+                )}
 
-              {/* إذا تم كشف التلميح بالفعل، نعرضه مع زر كشف الإجابة */}
-              {revealedHintMap[hintModalQuestionId] && q && (
-                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
-                  <div className="text-sm"><strong>Hint:</strong> {q.hint || 'لا يوجد تلميح متاح.'}</div>
-                  {!revealedAnswerMap[hintModalQuestionId] && (
-                    <div className="mt-3 flex justify-end">
+                <div className="flex gap-3 justify-end">
+                  {!isHintRevealed ? (
+                    <Button onClick={() => { revealHint(hintModalQuestionId); }}>Reveal hint</Button>
+                  ) : (
+                    !isAnswerRevealed ? (
                       <Button onClick={() => revealAnswer(hintModalQuestionId)}>Reveal answer</Button>
-                    </div>
-                  )}
-                  {revealedAnswerMap[hintModalQuestionId] && (
-                    <div className="mt-3 p-2 bg-slate-100 border rounded">
-                      <div className="text-sm"><strong>Answer:</strong> {q.answer}</div>
-                      {q.explanation && <div className="text-sm mt-1 text-slate-700"><strong>Explanation:</strong> {typeof q.explanation === 'string' ? q.explanation : (q.explanation?.ar || q.explanation?.en || JSON.stringify(q.explanation))}</div>}
-                    </div>
+                    ) : null
                   )}
                 </div>
-              )}
+
+                {isAnswerRevealed && q && (
+                  <div className="mt-3 p-3 bg-white border rounded">
+                    <div className="text-sm"><strong>Answer:</strong> {q.answer}</div>
+                    {q.explanation && (
+                      <div className="text-sm mt-2 text-slate-700">
+                        <strong>Explanation:</strong> {typeof q.explanation === 'string' ? q.explanation : (q.explanation?.ar || q.explanation?.en || JSON.stringify(q.explanation))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3 justify-end">
+                <Button variant="outline" onClick={() => { closeHintModal(); }}>إغلاق</Button>
+                {!isHintRevealed && (
+                  <Button onClick={() => { revealHint(hintModalQuestionId); }}>كشف التلميح الآن</Button>
+                )}
+              </div>
             </div>
           </div>
         );
