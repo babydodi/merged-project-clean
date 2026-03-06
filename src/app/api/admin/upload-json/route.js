@@ -15,6 +15,7 @@ function normalizeListeningQuestion(q) {
     explanation: q.explanation ?? null
   };
 }
+
 function normalizeReadingQuestion(q) {
   return {
     idx: q.idx ?? null,
@@ -28,6 +29,7 @@ function normalizeReadingQuestion(q) {
     underlined_positions: ensureArray(q.underlined_positions)
   };
 }
+
 function normalizeGrammarQuestion(q) {
   return {
     idx: q.idx ?? null,
@@ -42,6 +44,7 @@ function normalizeGrammarQuestion(q) {
     underlined_positions: ensureArray(q.underlined_positions)
   };
 }
+
 function normalizeListeningPiece(piece) {
   return {
     idx: piece.idx ?? null,
@@ -50,15 +53,19 @@ function normalizeListeningPiece(piece) {
     listening_questions: ensureArray(piece.listening_questions || piece.questions).map(normalizeListeningQuestion)
   };
 }
+
+// ✅ تم إضافة image_url هنا
 function normalizeReadingPiece(piece) {
   return {
     idx: piece.idx ?? null,
     passage_title: piece.passage_title ?? piece.title ?? null,
     passage: piece.passage ?? piece.transcript ?? piece.text ?? null,
     passage_paragraphs: Array.isArray(piece.passage_paragraphs) ? piece.passage_paragraphs : null,
+    image_url: piece.image_url ?? null,
     reading_questions: ensureArray(piece.reading_questions || piece.questions).map(normalizeReadingQuestion)
   };
 }
+
 function normalizeChapter(ch) {
   const base = {
     idx: ch.idx ?? null,
@@ -136,7 +143,6 @@ export async function POST(request) {
     const incomingChapters = Array.isArray(payload.chapters) ? payload.chapters : [payload.chapters];
     const normalizedChapters = incomingChapters.map(normalizeChapter);
 
-    // test handling: prefer provided test_id, otherwise create test from payload.test
     let test_id = payload.test_id ?? null;
     let createdTestId = null;
     if (!test_id && payload.test) {
@@ -147,11 +153,13 @@ export async function POST(request) {
     const results = { chapters: [], errors: [] };
     if (createdTestId) results.testId = createdTestId;
 
-    // allowed columns per table (match your DB schema)
+    // ⬇️ تم إضافة image_url هنا
     const LISTENING_PIECE_COLS = ['chapter_id', 'idx', 'audio_url', 'transcript'];
     const LISTENING_QUESTION_COLS = ['listening_piece_id', 'idx', 'question_text', 'options', 'answer', 'hint', 'explanation'];
-    const READING_PIECE_COLS = ['chapter_id', 'idx', 'passage_title', 'passage'];
+
+    const READING_PIECE_COLS = ['chapter_id', 'idx', 'passage_title', 'passage', 'image_url'];
     const READING_QUESTION_COLS = ['reading_piece_id', 'idx', 'question_text', 'options', 'answer', 'hint', 'explanation', 'base_text', 'underlined_words', 'underlined_positions'];
+
     const GRAMMAR_QUESTION_COLS = ['chapter_id', 'idx', 'question_text', 'options', 'answer', 'hint', 'explanation', 'category', 'base_text', 'underlined_words', 'underlined_positions'];
 
     for (const ch of normalizedChapters) {
@@ -165,20 +173,20 @@ export async function POST(request) {
             const { error: pieceErr } = await supabase.from('listening_pieces').upsert(pieceRow, { onConflict: ['chapter_id', 'idx'] });
             if (pieceErr) throw pieceErr;
 
-            const { data: foundPiece, error: findPieceErr } = await supabase
+            const { data: foundPiece } = await supabase
               .from('listening_pieces')
               .select('id')
               .eq('chapter_id', chapterId)
               .eq('idx', p.idx)
-              .limit(1)
               .single();
-            if (findPieceErr) throw findPieceErr;
+
             const listening_piece_id = foundPiece?.id ?? null;
 
             const questionRows = (p.listening_questions || []).map(q => {
               const normalized = normalizeListeningQuestion(q);
               return pick({ listening_piece_id, ...normalized }, LISTENING_QUESTION_COLS);
             });
+
             if (questionRows.length) {
               const { error: qErr } = await supabase.from('listening_questions').upsert(questionRows, { onConflict: ['listening_piece_id', 'idx'] });
               if (qErr) throw qErr;
@@ -186,18 +194,15 @@ export async function POST(request) {
           }
         }
 
-        // READING (convert passage_paragraphs -> passage string before upsert)
+        // READING
         if (ch.type === 'reading') {
           for (const p of ch.pieces || []) {
             const normalizedPiece = normalizeReadingPiece(p);
 
             let passageValue = normalizedPiece.passage;
-            if (normalizedPiece.passage_paragraphs && Array.isArray(normalizedPiece.passage_paragraphs) && normalizedPiece.passage_paragraphs.length) {
+            if (normalizedPiece.passage_paragraphs?.length) {
               passageValue = normalizedPiece.passage_paragraphs
-                .map((pp, idx) => {
-                  const num = pp.num ?? (idx + 1);
-                  return `${num}. ${pp.text}`;
-                })
+                .map((pp, idx) => `${pp.num ?? idx + 1}. ${pp.text}`)
                 .join('\n\n');
             }
 
@@ -205,26 +210,27 @@ export async function POST(request) {
               chapter_id: chapterId,
               idx: normalizedPiece.idx,
               passage_title: normalizedPiece.passage_title,
-              passage: passageValue
+              passage: passageValue,
+              image_url: normalizedPiece.image_url
             }, READING_PIECE_COLS);
 
             const { error: pieceErr } = await supabase.from('reading_pieces').upsert(pieceRow, { onConflict: ['chapter_id', 'idx'] });
             if (pieceErr) throw pieceErr;
 
-            const { data: foundPiece, error: findPieceErr } = await supabase
+            const { data: foundPiece } = await supabase
               .from('reading_pieces')
               .select('id')
               .eq('chapter_id', chapterId)
               .eq('idx', normalizedPiece.idx)
-              .limit(1)
               .single();
-            if (findPieceErr) throw findPieceErr;
+
             const reading_piece_id = foundPiece?.id ?? null;
 
             const questionRows = (normalizedPiece.reading_questions || []).map(q => {
               const normalized = normalizeReadingQuestion(q);
               return pick({ reading_piece_id, ...normalized }, READING_QUESTION_COLS);
             });
+
             if (questionRows.length) {
               const { error: qErr } = await supabase.from('reading_questions').upsert(questionRows, { onConflict: ['reading_piece_id', 'idx'] });
               if (qErr) throw qErr;
@@ -238,6 +244,7 @@ export async function POST(request) {
             const normalized = normalizeGrammarQuestion(q);
             return pick({ chapter_id: chapterId, ...normalized }, GRAMMAR_QUESTION_COLS);
           });
+
           if (questionRows.length) {
             const { error: gErr } = await supabase.from('grammar_questions').upsert(questionRows, { onConflict: ['chapter_id', 'idx'] });
             if (gErr) throw gErr;
@@ -246,7 +253,6 @@ export async function POST(request) {
 
         results.chapters.push({ type: ch.type, idx: ch.idx, chapterId });
       } catch (chError) {
-        console.error('Chapter processing error:', ch.idx ?? ch.title ?? null, chError);
         results.errors.push({
           chapter: ch.idx ?? ch.title ?? null,
           message: chError?.message ?? String(chError),
@@ -256,8 +262,8 @@ export async function POST(request) {
     }
 
     return NextResponse.json({ ok: true, results }, { status: 200 });
+
   } catch (err) {
-    console.error('Upload error', err);
     return NextResponse.json({ error: err?.message ?? String(err), stack: err?.stack ?? null }, { status: 500 });
   }
 }
