@@ -8,15 +8,15 @@ import { Button } from '../../../components/ui/button';
 
 // ثابت التوقيت المطلوب حسب ترتيب الفصول (بالدقائق)
 const REQUIRED_MINUTES_BY_INDEX = {
-  0: 13, // Listening Part 1 (5)
-  1: 13, // Listening Part 2 (5)
-  2: 20, // Listening Part 3 (10)
-  3: 20, // Reading Part 1 (15)
-  4: 20, // Reading Part 2 (15)
-  5: 20, // Reading Part 3 (10)
-  6: 20, // Grammar Part 1 (20)
-  7: 10, // Grammar Part 2 (10)
-  8: 10, // Grammar Part 3 (10)
+  0: 13,
+  1: 13,
+  2: 20,
+  3: 20,
+  4: 20,
+  5: 20,
+  6: 20,
+  7: 10,
+  8: 10,
 };
 
 // مساعد لتحويل دقائق إلى ثواني
@@ -112,6 +112,8 @@ export default function TestPage() {
 
   // من أجل ضبط تأخير التشغيل التلقائي
   const playTimeoutRef = useRef(null);
+  const playCountdownIntervalRef = useRef(null);
+  const [playCountdown, setPlayCountdown] = useState(null); // seconds remaining until autoplay
 
   // مجموع النقاط الممكنة للاختبار
   const [totalPossible, setTotalPossible] = useState(0);
@@ -429,70 +431,109 @@ export default function TestPage() {
 
   // منطق الصوت — تشغيل تلقائي مرة واحدة لكل قطعة فقط مع تأخير يعتمد على عدد الأسئلة
   useEffect(() => {
-    setIsLockedPlay(false);
-    setIsPlaying(false);
-    lastTimeRef.current = 0;
-
-    // تنظيف أي timeout سابق
+    // تنظيف أي تايمر أو عداد سابق
     if (playTimeoutRef.current) {
       clearTimeout(playTimeoutRef.current);
       playTimeoutRef.current = null;
     }
+    if (playCountdownIntervalRef.current) {
+      clearInterval(playCountdownIntervalRef.current);
+      playCountdownIntervalRef.current = null;
+    }
+    setPlayCountdown(null);
+
+    setIsLockedPlay(false);
+    setIsPlaying(false);
+    lastTimeRef.current = 0;
 
     const el = audioRef.current;
     if (!el) return;
 
     try {
+      // إعادة ضبط الصوت
       el.pause();
       el.removeAttribute('src');
       el.src = '';
       el.load();
 
+      // ننتظر قليلًا ليتأكد DOM محدث
       setTimeout(() => {
-        if (!audioRef.current) return;
-        if (currentPiece?.audio_url) {
-          audioRef.current.src = currentPiece.audio_url;
-          audioRef.current.load();
+        if (!audioRef.current || !currentPiece?.audio_url) return;
 
-          // حساب التأخير: 15 ثانية لكل سؤال، لكن لا يتجاوز 45 ثانية
-          const numQs = (currentPiece.listening_questions || []).length || 1;
-          const delaySecs = Math.min(15 * numQs, 45);
-          const delayMs = delaySecs * 1000;
+        audioRef.current.src = currentPiece.audio_url;
+        audioRef.current.load();
 
-          // إذا هذه القطعة لم تُشغّل تلقائياً سابقًا، نؤجل التشغيل
-          const alreadyPlayed = !!playedMapRef.current[currentPiece.id];
+        // حساب التأخير: 15 ثانية لكل سؤال، بحد أقصى 45 ثانية
+        const numQs = (currentPiece.listening_questions || []).length || 1;
+        const delaySecs = Math.min(numQs * 15, 45);
 
-          if (!alreadyPlayed) {
-            playTimeoutRef.current = setTimeout(() => {
-              // حاول التشغيل التلقائي مرة واحدة فقط
-              audioRef.current.play().then(() => {
+        // إذا هذه القطعة لم تُشغّل تلقائياً سابقًا → نعرض عداد القراءة ثم نحاول التشغيل
+        const alreadyPlayed = !!playedMapRef.current[currentPiece.id];
+
+        if (!alreadyPlayed) {
+          // ابدأ العد التنازلي للعرض للمستخدم
+          setPlayCountdown(delaySecs);
+          playCountdownIntervalRef.current = setInterval(() => {
+            setPlayCountdown(prev => {
+              if (prev == null) return null;
+              if (prev <= 1) {
+                clearInterval(playCountdownIntervalRef.current);
+                playCountdownIntervalRef.current = null;
+                return 0;
+              }
+              return prev - 1;
+            });
+          }, 1000);
+
+          // جدولة التشغيل التلقائي
+          playTimeoutRef.current = setTimeout(() => {
+            // حاول التشغيل التلقائي مرة واحدة
+            audioRef.current.play()
+              .then(() => {
                 setIsPlaying(true);
                 playedMapRef.current[currentPiece.id] = true;
                 setIsLockedPlay(false);
-              }).catch((err) => {
+                // تنظيف العداد
+                if (playCountdownIntervalRef.current) {
+                  clearInterval(playCountdownIntervalRef.current);
+                  playCountdownIntervalRef.current = null;
+                }
+                setPlayCountdown(null);
+              })
+              .catch(err => {
                 // المتصفح قد يمنع التشغيل التلقائي؛ نترك عناصر التحكم للمستخدم
-                console.warn('autoplay failed', err);
+                console.warn('Autoplay failed:', err);
                 setIsPlaying(false);
                 setIsLockedPlay(false);
+                if (playCountdownIntervalRef.current) {
+                  clearInterval(playCountdownIntervalRef.current);
+                  playCountdownIntervalRef.current = null;
+                }
+                setPlayCountdown(null);
               });
-            }, delayMs);
-          } else {
-            // إذا شغّلت سابقًا، لا نحاول التشغيل التلقائي مجدداً
-            setIsPlaying(false);
-            setIsLockedPlay(false);
-          }
+            playTimeoutRef.current = null;
+          }, delaySecs * 1000);
+        } else {
+          // سبق وتشغّل → لا تعيد التشغيل، لا تعرض عداد
+          setPlayCountdown(null);
+          setIsPlaying(false);
+          setIsLockedPlay(false);
         }
-      }, 80);
+      }, 150);
     } catch (e) {
-      console.warn('audio reset error', e);
+      console.warn('audio init error', e);
     }
 
     return () => {
-      // تنظيف عند تغيير القطعة أو إلغاء المكوّن
       if (playTimeoutRef.current) {
         clearTimeout(playTimeoutRef.current);
         playTimeoutRef.current = null;
       }
+      if (playCountdownIntervalRef.current) {
+        clearInterval(playCountdownIntervalRef.current);
+        playCountdownIntervalRef.current = null;
+      }
+      setPlayCountdown(null);
     };
   }, [currentPiece?.id]);
 
@@ -551,6 +592,11 @@ export default function TestPage() {
         clearTimeout(playTimeoutRef.current);
         playTimeoutRef.current = null;
       }
+      if (playCountdownIntervalRef.current) {
+        clearInterval(playCountdownIntervalRef.current);
+        playCountdownIntervalRef.current = null;
+      }
+      setPlayCountdown(null);
     } catch {}
   }
 
@@ -1003,7 +1049,14 @@ export default function TestPage() {
                 متصفحك لا يدعم عناصر الصوت.
               </audio>
 
-              {!isPlaying && (
+              {/* عرض رسالة العد التنازلي قبل بدء التشغيل التلقائي */}
+              {playCountdown != null && playCountdown > 0 && (
+                <div className="mt-3 p-3 bg-blue-50 border border-blue-100 rounded text-sm text-blue-700">
+                  You have <span className="font-semibold">{playCountdown}</span> seconds to read the questions before the audio starts.
+                </div>
+              )}
+
+              {!isPlaying && playCountdown == null && (
                 <div className="mt-3">
                   <div className="text-sm text-slate-500 mt-2">المقطع سيحاول التشغيل تلقائياً مرة واحدة بعد تأخير يعتمد على عدد الأسئلة. إذا لم يبدأ، اضغط زر التشغيل.</div>
                 </div>
@@ -1063,12 +1116,71 @@ export default function TestPage() {
         </div>
       )}
 
-      {/* Reading & Grammar rendering omitted for brevity — keep existing rendering logic */}
-      {/* ... you can keep the rest of your UI rendering for reading and grammar as before ... */}
+      {/* Reading & Grammar rendering kept as original structure (not modified here) */}
+      {currentChapter?.type === 'reading' && currentPiece && (
+        <div className="bg-white rounded-lg p-6 shadow-sm mb-6">
+          {currentPiece.image_url && (
+            <div className="mb-4">
+              <img src={currentPiece.image_url} alt={currentPiece.passage_title || 'passage image'} className="max-w-full h-auto rounded" />
+            </div>
+          )}
+          {currentPiece.passage_paragraphs ? (
+            currentPiece.passage_paragraphs.map(pp => (
+              <p key={pp.num} className="mb-3 text-justify">{pp.text}</p>
+            ))
+          ) : (
+            <p className="mb-3 text-justify">{currentPiece.passage}</p>
+          )}
+
+          <div className="mt-4">
+            {currentPiece.reading_questions?.map((q, i) => (
+              <div key={q.id} id={`q-${q.id}`} className="bg-white rounded-lg p-4 shadow-sm mb-3">
+                <div className="flex items-start justify-between mb-2">
+                  <p className="text-lg font-medium"><span className="text-blue-600 mr-2 font-semibold">{i + 1}.</span>{q.question_text}</p>
+                  <button type="button" onClick={() => toggleMark(q.id)} title="علامة للرجوع" className="text-yellow-600 ml-3"><Tag className={`w-4 h-4 ${markedMap[q.id] ? 'text-yellow-600' : 'text-slate-300'}`} /></button>
+                </div>
+                <div className="space-y-2">
+                  {q.options?.map((opt, oi) => (
+                    <label key={oi} className={`flex items-center p-3 border-2 rounded-md cursor-pointer ${answers[q.id] === opt ? 'border-blue-600' : 'border-slate-200'}`}>
+                      <input type="radio" name={`q-${q.id}`} value={opt} onChange={() => handleSelect(q.id, opt)} checked={answers[q.id] === opt} className="w-4 h-4 text-blue-600 mr-3" />
+                      <span className="font-medium mr-2">{String.fromCharCode(65 + oi)}.</span>
+                      <span>{opt}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {currentChapter?.type === 'grammar' && (
+        <div className="space-y-4">
+          {currentChapter.questions?.map((q, i) => (
+            <div key={q.id} id={`q-${q.id}`} className="bg-white rounded-lg p-4 shadow-sm">
+              <div className="flex items-start justify-between mb-2">
+                <p className="text-lg font-medium"><span className="text-blue-600 mr-2 font-semibold">{i + 1}.</span>{q.question_text}</p>
+                <button type="button" onClick={() => toggleMark(q.id)} title="علامة للرجوع" className="text-yellow-600 ml-3"><Tag className={`w-4 h-4 ${markedMap[q.id] ? 'text-yellow-600' : 'text-slate-300'}`} /></button>
+              </div>
+              <div className="space-y-2">
+                {q.options?.map((opt, oi) => (
+                  <label key={oi} className={`flex items-center p-3 border-2 rounded-md cursor-pointer ${answers[q.id] === opt ? 'border-blue-600' : 'border-slate-200'}`}>
+                    <input type="radio" name={`q-${q.id}`} value={opt} onChange={() => handleSelect(q.id, opt)} checked={answers[q.id] === opt} className="w-4 h-4 text-blue-600 mr-3" />
+                    <span className="font-medium mr-2">{String.fromCharCode(65 + oi)}.</span>
+                    <span>{opt}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="mt-6 flex items-center gap-3">
+        {/* استعادة تصميم زر الرجوع كما كان في الكود الأصلي */}
         <Button onClick={handlePrev} variant="outline"><ArrowLeft className="w-4 h-4 mr-2" /> السابق</Button>
-        <Button onClick={handleNext} variant="primary">التالي <ChevronRight className="w-4 h-4 ml-2" /></Button>
+        {/* استعادة تصميم زر التالي كما كان في الكود الأصلي */}
+        <Button onClick={handleNext}>التالي <ChevronRight className="w-4 h-4 ml-2" /></Button>
         <div className="ml-auto">
           <Button onClick={goToReview} variant="ghost">راجع المحاولة</Button>
         </div>
