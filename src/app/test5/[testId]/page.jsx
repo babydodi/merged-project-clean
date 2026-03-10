@@ -9,25 +9,54 @@ import { Button } from '../../../components/ui/button';
 const REQUIRED_MINUTES_BY_INDEX = { 0:13,1:13,2:20,3:20,4:20,5:20,6:20,7:10,8:10 };
 const minsToSecs = (m) => Math.max(0, Math.round(m * 60));
 
+/* ---------- مكوّن عرض التنبيه (Banner) - الآن في منتصف الشاشة ---------- */
 function AlertBanner({ alert, onClose }) {
   if (!alert) return null;
+
+  // alert shape:
+  // { title, message, type: 'info'|'confirm', confirmLabel, cancelLabel, onConfirm, onCancel }
   return (
-    <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 w-[min(900px,95%)]">
-      <div className="bg-white border shadow-md rounded p-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="w-[min(900px,95%)] mx-4">
+        <div className="bg-white border shadow-md rounded p-4">
+          <div className="flex flex-col gap-3">
             <div className="font-semibold text-lg">{alert.title}</div>
-            <div className="text-sm text-slate-600 mt-1">{alert.message}</div>
-          </div>
-          <div className="flex items-center gap-2">
-            {alert.type === 'confirm' ? (
-              <>
-                <Button variant="outline" size="sm" onClick={() => { if (alert.onCancel) alert.onCancel(); if (onClose) onClose(); }}>{alert.cancelLabel || 'إلغاء'}</Button>
-                <Button size="sm" onClick={() => { if (alert.onConfirm) alert.onConfirm(); if (onClose) onClose(); }}>{alert.confirmLabel || 'موافق'}</Button>
-              </>
-            ) : (
-              <Button size="sm" variant="outline" onClick={() => { if (onClose) onClose(); }}>إغلاق</Button>
-            )}
+            <div className="text-sm text-slate-600">{alert.message}</div>
+            <div className="flex justify-end gap-2">
+              {alert.type === 'confirm' ? (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (typeof alert.onCancel === 'function') alert.onCancel();
+                      if (onClose) onClose();
+                    }}
+                  >
+                    {alert.cancelLabel || 'إلغاء'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      if (typeof alert.onConfirm === 'function') alert.onConfirm();
+                      if (onClose) onClose();
+                    }}
+                  >
+                    {alert.confirmLabel || 'موافق'}
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    if (onClose) onClose();
+                  }}
+                >
+                  إغلاق
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -35,6 +64,58 @@ function AlertBanner({ alert, onClose }) {
   );
 }
 
+/* ---------- مكوّن نافذة الـ Hint (Modal) ---------- */
+function HintModal({ open, question, revealedHint, revealedAnswer, onClose, onRevealHint, onRevealAnswer }) {
+  if (!open || !question) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="w-[min(800px,95%)] mx-4">
+        <div className="bg-white rounded shadow-lg p-6">
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <h3 className="text-lg font-semibold">Hint</h3>
+              <p className="text-sm text-slate-600 mt-1">{question.question_text}</p>
+            </div>
+            <button onClick={onClose} className="text-slate-500">إغلاق</button>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <div className="text-sm text-slate-700 font-medium mb-1">Hint</div>
+              {revealedHint ? (
+                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">{question.hint || 'لا يوجد تلميح.'}</div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <div className="text-sm text-slate-500">التلميح مخفي. اضغط زر "كشف التلميح" لعرضه.</div>
+                  <Button size="sm" onClick={() => onRevealHint(question.id)}>كشف التلميح</Button>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <div className="text-sm text-slate-700 font-medium mb-1">Answer</div>
+              {revealedAnswer ? (
+                <div className="p-3 bg-green-50 border border-green-200 rounded text-sm text-green-800">{question.answer ?? 'لا يوجد إجابة محفوظة.'}</div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <div className="text-sm text-slate-500">الإجابة مخفية. اضغط زر "كشف الإجابة" لعرضها.</div>
+                  <Button size="sm" onClick={() => onRevealAnswer(question.id)}>كشف الإجابة</Button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-6 flex justify-end">
+            <Button variant="outline" onClick={onClose}>إغلاق</Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- الصفحة الرئيسية ---------- */
 export default function TestPage() {
   const { testId: id } = useParams();
   const router = useRouter();
@@ -54,61 +135,109 @@ export default function TestPage() {
   const [markedMap, setMarkedMap] = useState({});
   const [validationError, setValidationError] = useState('');
 
+  // التوقيت لكل فصل
   const [chapterRemainingSecs, setChapterRemainingSecs] = useState(null);
   const timerRef = useRef(null);
 
-  // audio
+  // الصوت
   const audioRef = useRef(null);
   const lastTimeRef = useRef(0);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // played map to prevent re-showing button / re-playing
+  // تتبع التشغيل لكل قطعة — لضمان التشغيل مرة واحدة فقط لكل قطعة
   const playedMapRef = useRef({}); // pieceId -> true
 
-  // play button logic
-  const playTimeoutRef = useRef(null);
-  const playCountdownIntervalRef = useRef(null);
-  const [playCountdown, setPlayCountdown] = useState(null);
+  // زر التشغيل (بدون عد)
   const [showPlayButton, setShowPlayButton] = useState(false);
 
-  const [totalPossible, setTotalPossible] = useState(0);
-  const [resultSummary, setResultSummary] = useState(null);
+  // Hint modal state
+  const [hintModalOpen, setHintModalOpen] = useState(false);
+  const [hintModalQuestionId, setHintModalQuestionId] = useState(null);
+  const [revealedHintMap, setRevealedHintMap] = useState({});
+  const [revealedAnswerMap, setRevealedAnswerMap] = useState({});
 
+  // تنبيهات داخل الواجهة (بديل window.alert)
   const [currentAlert, setCurrentAlert] = useState(null);
   const alertTimeoutRef = useRef(null);
-  const alertedRef = useRef({});
 
-  useEffect(() => { initTest(); /* eslint-disable-next-line */ }, [id]);
+  // لتجنب تكرار التنبيهات الزمنية لكل فصل/عتبة
+  const alertedRef = useRef({}); // chapterIndex -> Set(thresholdSecs)
+
+  useEffect(() => {
+    initTest();
+    /* eslint-disable-next-line */
+  }, [id]);
 
   async function initTest() {
     try {
       if (!id) { setLoading(false); return; }
       setLoading(true);
 
+      // إنشاء attempt
       const { data: userData } = await supabase.auth.getUser();
       const currentUser = userData?.user || null;
       const payload = currentUser ? { test_id: id, user_id: currentUser.id } : { test_id: id };
 
-      const { data: attempt, error: attemptErr } = await supabase.from('test_attempts').insert(payload).select().single();
+      const { data: attempt, error: attemptErr } = await supabase
+        .from('test_attempts')
+        .insert(payload)
+        .select()
+        .single();
+
       if (attemptErr) throw attemptErr;
       setAttemptId(attempt.id);
 
-      const { data: testData, error: testErr } = await supabase.from('tests').select('*').eq('id', id).single();
+      // اختبار
+      const { data: testData, error: testErr } = await supabase
+        .from('tests')
+        .select('*')
+        .eq('id', id)
+        .single();
+
       if (testErr) throw testErr;
       setTest(testData);
 
-      const { data: chaptersData, error: chErr } = await supabase.from('chapters').select('id, type, title, idx, duration_seconds').eq('test_id', id).order('idx', { ascending: true });
+      // فصول
+      const { data: chaptersData, error: chErr } = await supabase
+        .from('chapters')
+        .select('id, type, title, idx, duration_seconds')
+        .eq('test_id', id)
+        .order('idx', { ascending: true });
+
       if (chErr) throw chErr;
 
+      // تحميل محتوى كل فصل حسب نوعه
       const assembled = [];
+
       for (const ch of chaptersData || []) {
         if (ch.type === 'listening') {
-          const { data: pieces, error: lpErr } = await supabase.from('listening_pieces').select(`id, audio_url, transcript, idx, listening_questions ( id, idx, question_text, options, answer, hint, explanation, points )`).eq('chapter_id', ch.id).order('idx', { ascending: true });
+          const { data: pieces, error: lpErr } = await supabase
+            .from('listening_pieces')
+            .select(
+              `id, audio_url, transcript, idx,
+              listening_questions (
+                id, idx, question_text, options, answer, hint, explanation, points
+              )`
+            )
+            .eq('chapter_id', ch.id)
+            .order('idx', { ascending: true });
+
           if (lpErr) throw lpErr;
           assembled.push({ ...ch, pieces: pieces || [] });
         } else if (ch.type === 'reading') {
-          const { data: pieces, error: rpErr } = await supabase.from('reading_pieces').select(`id, passage_title, passage, idx, image_url, reading_questions ( id, idx, question_text, options, answer, hint, explanation, base_text, underlined_words, underlined_positions, points )`).eq('chapter_id', ch.id).order('idx', { ascending: true });
+          const { data: pieces, error: rpErr } = await supabase
+            .from('reading_pieces')
+            .select(
+              `id, passage_title, passage, idx, image_url,
+              reading_questions (
+                id, idx, question_text, options, answer, hint, explanation, base_text, underlined_words, underlined_positions, points
+              )`
+            )
+            .eq('chapter_id', ch.id)
+            .order('idx', { ascending: true });
+
           if (rpErr) throw rpErr;
+
           const normalizedPieces = (pieces || []).map(p => {
             const piece = { ...p };
             if (piece.passage && typeof piece.passage === 'string') {
@@ -122,16 +251,23 @@ export default function TestPage() {
             }
             return piece;
           });
+
           assembled.push({ ...ch, pieces: normalizedPieces });
         } else if (ch.type === 'grammar') {
-          const { data: questions, error: gErr } = await supabase.from('grammar_questions').select('id, idx, question_text, options, answer, hint, explanation, category, base_text, underlined_words, underlined_positions, points').eq('chapter_id', ch.id).order('idx', { ascending: true });
+          const { data: questions, error: gErr } = await supabase
+            .from('grammar_questions')
+            .select('id, idx, question_text, options, answer, hint, explanation, category, base_text, underlined_words, underlined_positions, points')
+            .eq('chapter_id', ch.id)
+            .order('idx', { ascending: true });
+
           if (gErr) throw gErr;
           assembled.push({ ...ch, questions: questions || [] });
         }
       }
 
-      assembled.sort((a,b) => (a.idx ?? 0) - (b.idx ?? 0));
-      const enforced = assembled.map((ch,i) => {
+      assembled.sort((a, b) => (a.idx ?? 0) - (b.idx ?? 0));
+
+      const enforced = assembled.map((ch, i) => {
         const mins = REQUIRED_MINUTES_BY_INDEX[i];
         const enforcedDuration = mins != null ? minsToSecs(mins) : ch.duration_seconds;
         return { ...ch, duration_seconds: enforcedDuration };
@@ -139,9 +275,23 @@ export default function TestPage() {
 
       let total = 0;
       for (const ch of enforced) {
-        if (ch.type === 'listening') for (const p of (ch.pieces||[])) for (const q of (p.listening_questions||[])) total += Number(q.points||1);
-        if (ch.type === 'reading') for (const p of (ch.pieces||[])) for (const q of (p.reading_questions||[])) total += Number(q.points||1);
-        if (ch.type === 'grammar') for (const q of (ch.questions||[])) total += Number(q.points||1);
+        if (ch.type === 'listening') {
+          for (const p of (ch.pieces || [])) {
+            for (const q of (p.listening_questions || [])) {
+              total += Number(q.points || 1);
+            }
+          }
+        } else if (ch.type === 'reading') {
+          for (const p of (ch.pieces || [])) {
+            for (const q of (p.reading_questions || [])) {
+              total += Number(q.points || 1);
+            }
+          }
+        } else if (ch.type === 'grammar') {
+          for (const q of (ch.questions || [])) {
+            total += Number(q.points || 1);
+          }
+        }
       }
 
       setChapters(enforced);
@@ -162,8 +312,8 @@ export default function TestPage() {
       const firstDuration = enforced[0]?.duration_seconds ?? minsToSecs(13);
       setChapterRemainingSecs(firstDuration);
       startChapterTimer(firstDuration);
-    } catch (err) {
-      console.error('Init error:', err);
+    } catch (error) {
+      console.error('Init error:', error);
     } finally {
       setLoading(false);
     }
@@ -173,14 +323,20 @@ export default function TestPage() {
     clearInterval(timerRef.current);
     setChapterRemainingSecs(totalSecs);
     if (!alertedRef.current[currentChapterIndex]) alertedRef.current[currentChapterIndex] = new Set();
+
     timerRef.current = setInterval(() => {
       setChapterRemainingSecs(prev => {
         if (prev == null) return null;
-        if (prev <= 1) { clearInterval(timerRef.current); handleChapterTimeout(); return 0; }
+        if (prev <= 1) {
+          clearInterval(timerRef.current);
+          handleChapterTimeout();
+          return 0;
+        }
         return prev - 1;
       });
     }, 1000);
   }
+
   function stopChapterTimer() { clearInterval(timerRef.current); }
 
   async function handleChapterTimeout() {
@@ -198,90 +354,92 @@ export default function TestPage() {
   async function saveAllAnswersInCurrentChapter() {
     if (!attemptId || !currentChapter) return;
     const rows = [];
+
     if (currentChapter.type === 'listening') {
-      for (const p of (currentChapter.pieces||[])) for (const q of (p.listening_questions||[])) {
-        const selected = answers[q.id];
-        const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
-        const pointsAwarded = isCorrect ? Number(q.points||1) : 0;
-        rows.push({ attempt_id: attemptId, question_id: q.id, question_type: 'listening', selected_choice: selected != null ? String(selected) : null, is_correct: isCorrect, points_awarded: pointsAwarded, answered_at: new Date().toISOString() });
-        if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
+      for (const p of (currentChapter.pieces || [])) {
+        for (const q of (p.listening_questions || [])) {
+          const selected = answers[q.id];
+          const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
+          const pointsAwarded = isCorrect ? Number(q.points || 1) : 0;
+          rows.push({
+            attempt_id: attemptId,
+            question_id: q.id,
+            question_type: 'listening',
+            selected_choice: selected != null ? String(selected) : null,
+            is_correct: isCorrect,
+            points_awarded: pointsAwarded,
+            answered_at: new Date().toISOString(),
+          });
+          if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
+        }
       }
     } else if (currentChapter.type === 'reading') {
-      for (const p of (currentChapter.pieces||[])) for (const q of (p.reading_questions||[])) {
-        const selected = answers[q.id];
-        const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
-        const pointsAwarded = isCorrect ? Number(q.points||1) : 0;
-        rows.push({ attempt_id: attemptId, question_id: q.id, question_type: 'reading', selected_choice: selected != null ? String(selected) : null, is_correct: isCorrect, points_awarded: pointsAwarded, answered_at: new Date().toISOString() });
-        if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
+      for (const p of (currentChapter.pieces || [])) {
+        for (const q of (p.reading_questions || [])) {
+          const selected = answers[q.id];
+          const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
+          const pointsAwarded = isCorrect ? Number(q.points || 1) : 0;
+          rows.push({
+            attempt_id: attemptId,
+            question_id: q.id,
+            question_type: 'reading',
+            selected_choice: selected != null ? String(selected) : null,
+            is_correct: isCorrect,
+            points_awarded: pointsAwarded,
+            answered_at: new Date().toISOString(),
+          });
+          if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
+        }
       }
     } else if (currentChapter.type === 'grammar') {
-      for (const q of (currentChapter.questions||[])) {
+      for (const q of (currentChapter.questions || [])) {
         const selected = answers[q.id];
         const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
-        const pointsAwarded = isCorrect ? Number(q.points||1) : 0;
-        rows.push({ attempt_id: attemptId, question_id: q.id, question_type: 'grammar', selected_choice: selected != null ? String(selected) : null, is_correct: isCorrect, points_awarded: pointsAwarded, answered_at: new Date().toISOString() });
+        const pointsAwarded = isCorrect ? Number(q.points || 1) : 0;
+        rows.push({
+          attempt_id: attemptId,
+          question_id: q.id,
+          question_type: 'grammar',
+          selected_choice: selected != null ? String(selected) : null,
+          is_correct: isCorrect,
+          points_awarded: pointsAwarded,
+          answered_at: new Date().toISOString(),
+        });
         if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
       }
     }
+
     if (rows.length) {
       const { error } = await supabase.from('question_attempts').upsert(rows, { onConflict: ['attempt_id', 'question_id'] });
       if (error) console.error('saveAllAnswers error', error);
     }
   }
 
-  // ------------- إصلاح ظهور زر التشغيل -------------
+  // ---------- زر التشغيل المباشر (بدون عد) ----------
   useEffect(() => {
-    // تنظيف سابق
-    if (playTimeoutRef.current) { clearTimeout(playTimeoutRef.current); playTimeoutRef.current = null; }
-    if (playCountdownIntervalRef.current) { clearInterval(playCountdownIntervalRef.current); playCountdownIntervalRef.current = null; }
-    setPlayCountdown(null);
+    // عند تغيير القطعة، نعرض زر التشغيل مباشرة إذا لم تُشغّل سابقًا
     setShowPlayButton(false);
     setIsPlaying(false);
 
     if (!currentPiece?.audio_url) return;
 
-    // إذا سبق وتشغّل هذه القطعة فلا نعرض زر
-    if (playedMapRef.current[currentPiece.id]) {
+    const alreadyPlayed = !!playedMapRef.current[currentPiece.id];
+    if (!alreadyPlayed) {
+      setShowPlayButton(true);
+    } else {
       setShowPlayButton(false);
-      setPlayCountdown(null);
-      return;
     }
 
-    const numQs = (currentPiece.listening_questions || []).length || 1;
-    const delaySecs = Math.min(numQs * 15, 45);
-
-    // عرض العد التنازلي فوراً
-    setPlayCountdown(delaySecs);
-    playCountdownIntervalRef.current = setInterval(() => {
-      setPlayCountdown(prev => {
-        if (prev == null) return null;
-        if (prev <= 1) {
-          clearInterval(playCountdownIntervalRef.current);
-          playCountdownIntervalRef.current = null;
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    // بعد delaySecs نعرض الزر (مرة واحدة)
-    playTimeoutRef.current = setTimeout(() => {
-      // تأكد أن القطعة لم تُشغّل أثناء الانتظار
-      if (!playedMapRef.current[currentPiece.id]) setShowPlayButton(true);
-      setPlayCountdown(null);
-      if (playCountdownIntervalRef.current) { clearInterval(playCountdownIntervalRef.current); playCountdownIntervalRef.current = null; }
-      playTimeoutRef.current = null;
-    }, delaySecs * 1000);
-
-    return () => {
-      if (playTimeoutRef.current) { clearTimeout(playTimeoutRef.current); playTimeoutRef.current = null; }
-      if (playCountdownIntervalRef.current) { clearInterval(playCountdownIntervalRef.current); playCountdownIntervalRef.current = null; }
-      setPlayCountdown(null);
-      setShowPlayButton(false);
-    };
+    // تنظيف الصوت السابق
+    try {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = '';
+        audioRef.current.load();
+      }
+    } catch {}
   }, [currentPiece?.id]);
 
-  // تشغيل الصوت عند ضغط المستخدم (مرة واحدة فقط)
   const handlePlayAudioNow = async () => {
     if (!currentPiece?.audio_url || !audioRef.current) return;
     try {
@@ -291,7 +449,6 @@ export default function TestPage() {
       setIsPlaying(true);
       playedMapRef.current[currentPiece.id] = true;
       setShowPlayButton(false);
-      setPlayCountdown(null);
     } catch (err) {
       console.warn('Play failed:', err);
       setCurrentAlert({ title: 'تعذر تشغيل الصوت', message: 'المتصفح منع التشغيل. حاول الضغط مرة أخرى.', type: 'info' });
@@ -301,12 +458,15 @@ export default function TestPage() {
   useEffect(() => {
     const el = audioRef.current;
     if (!el) return;
+
     function onPause() { setIsPlaying(false); }
     function onTimeUpdate() { lastTimeRef.current = el.currentTime; }
     function onEnded() { setIsPlaying(false); }
+
     el.addEventListener('pause', onPause);
     el.addEventListener('timeupdate', onTimeUpdate);
     el.addEventListener('ended', onEnded);
+
     return () => {
       el.removeEventListener('pause', onPause);
       el.removeEventListener('timeupdate', onTimeUpdate);
@@ -323,26 +483,53 @@ export default function TestPage() {
       el.load();
       setIsPlaying(false);
       lastTimeRef.current = 0;
-      if (playTimeoutRef.current) { clearTimeout(playTimeoutRef.current); playTimeoutRef.current = null; }
-      if (playCountdownIntervalRef.current) { clearInterval(playCountdownIntervalRef.current); playCountdownIntervalRef.current = null; }
-      setPlayCountdown(null);
       setShowPlayButton(false);
     } catch {}
   }
 
-  const handleSelect = (questionId, value) => { setAnswers(prev => ({ ...prev, [questionId]: value })); setAnsweredMap(prev => ({ ...prev, [questionId]: true })); };
-  const toggleMark = (questionId) => { setMarkedMap(prev => { const next = { ...prev }; if (next[questionId]) delete next[questionId]; else next[questionId] = true; return next; }); };
-  const goToQuestionInCurrent = (questionId) => { const el = document.getElementById(`q-${questionId}`); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
+  const handleSelect = (questionId, value) => {
+    setAnswers(prev => ({ ...prev, [questionId]: value }));
+    setAnsweredMap(prev => ({ ...prev, [questionId]: true }));
+  };
+
+  const toggleMark = (questionId) => {
+    setMarkedMap(prev => {
+      const next = { ...prev };
+      if (next[questionId]) delete next[questionId];
+      else next[questionId] = true;
+      return next;
+    });
+  };
+
+  const goToQuestionInCurrent = (questionId) => {
+    const el = document.getElementById(`q-${questionId}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  const getUnansweredInChapter = (chapter) => {
+    const qIds = [];
+    if (!chapter) return qIds;
+    if (chapter.type === 'listening') {
+      for (const p of (chapter.pieces || [])) for (const q of (p.listening_questions || [])) if (!answeredMap[q.id]) qIds.push(q.id);
+    } else if (chapter.type === 'reading') {
+      for (const p of (chapter.pieces || [])) for (const q of (p.reading_questions || [])) if (!answeredMap[q.id]) qIds.push(q.id);
+    } else if (chapter.type === 'grammar') {
+      for (const q of (chapter.questions || [])) if (!answeredMap[q.id]) qIds.push(q.id);
+    }
+    return qIds;
+  };
 
   useEffect(() => {
     if (!currentChapter || chapterRemainingSecs == null) return;
     const totalSecs = currentChapter.duration_seconds || 0;
     const chapterIdx = currentChapterIndex;
     const alertedSet = alertedRef.current[chapterIdx] || new Set();
+
     const thresholds = [];
     if (totalSecs >= minsToSecs(10) && totalSecs <= minsToSecs(13)) thresholds.push(minsToSecs(5));
     else if (totalSecs >= minsToSecs(20)) thresholds.push(minsToSecs(10), minsToSecs(5));
     else if (totalSecs >= minsToSecs(10) && totalSecs < minsToSecs(20)) thresholds.push(minsToSecs(5));
+
     for (const t of thresholds) {
       if (chapterRemainingSecs <= t && !alertedSet.has(t)) {
         alertedSet.add(t);
@@ -401,7 +588,6 @@ export default function TestPage() {
 
   const handleNext = async () => {
     if (!currentChapter) return;
-    // حفظ إجابات القطعة الحالية (كما في الكود السابق)
     if (currentChapter.type === 'listening') {
       const p = currentChapter.pieces?.[currentPieceIndex];
       if (p) {
@@ -421,7 +607,6 @@ export default function TestPage() {
       goToNextChapterOrFinish();
       return;
     }
-    // reading & grammar same as before
     if (currentChapter.type === 'reading') {
       const p = currentChapter.pieces?.[currentPieceIndex];
       if (p) {
@@ -462,7 +647,6 @@ export default function TestPage() {
 
   const handlePrev = async () => {
     if (!currentChapter) return;
-    // حفظ إجابات مشابهة كما في الكود السابق ثم التنقل
     if (currentChapter.type === 'listening') {
       const p = currentChapter.pieces?.[currentPieceIndex];
       if (p) {
@@ -507,6 +691,45 @@ export default function TestPage() {
     }
   };
 
+  // Hint modal helpers
+  const openHintModal = (questionId) => {
+    setHintModalQuestionId(questionId);
+    setHintModalOpen(true);
+  };
+
+  const closeHintModal = () => {
+    setHintModalOpen(false);
+    setHintModalQuestionId(null);
+  };
+
+  const revealHint = (questionId) => {
+    setRevealedHintMap(prev => ({ ...prev, [questionId]: true }));
+  };
+
+  const revealAnswer = (questionId) => {
+    setRevealedAnswerMap(prev => ({ ...prev, [questionId]: true }));
+  };
+
+  // get question object for modal
+  const hintQuestion = useMemo(() => {
+    if (!hintModalQuestionId || !currentChapter) return null;
+    if (currentChapter.type === 'listening') {
+      for (const p of (currentChapter.pieces || [])) {
+        const q = (p.listening_questions || []).find(x => x.id === hintModalQuestionId);
+        if (q) return q;
+      }
+    } else if (currentChapter.type === 'reading') {
+      for (const p of (currentChapter.pieces || [])) {
+        const q = (p.reading_questions || []).find(x => x.id === hintModalQuestionId);
+        if (q) return q;
+      }
+    } else if (currentChapter.type === 'grammar') {
+      const q = (currentChapter.questions || []).find(x => x.id === hintModalQuestionId);
+      if (q) return q;
+    }
+    return null;
+  }, [hintModalQuestionId, currentChapter]);
+
   if (loading) return <div className="p-6">جاري تحميل الاختبار...</div>;
 
   if (showResult) {
@@ -516,10 +739,12 @@ export default function TestPage() {
         <h2 className="text-lg mb-2">اكتمل الاختبار</h2>
         <div className="mb-4">النتيجة: {resultSummary ? `${resultSummary.percentage}%` : '—'}</div>
         <div className="mb-4">النقاط المحققة: {resultSummary ? resultSummary.totalAwarded : '—'} من {resultSummary ? resultSummary.totalPossible : totalPossible}</div>
+
         <div className="mt-6">
           <h3 className="font-semibold mb-2">الأسئلة الخاطئة</h3>
           <div className="text-sm text-slate-600">سيتم عرض الأسئلة الخاطئة هنا لمراجعتك.</div>
         </div>
+
         <div className="mt-6">
           <Button onClick={() => router.push('/dashboard')} variant="outline">الرئيسية</Button>
         </div>
@@ -529,9 +754,22 @@ export default function TestPage() {
 
   return (
     <div className="p-6">
+      {/* Alert Banner (now centered) */}
       <AlertBanner alert={currentAlert} onClose={closeAlert} />
 
+      {/* Hint Modal */}
+      <HintModal
+        open={hintModalOpen}
+        question={hintQuestion}
+        revealedHint={hintQuestion ? !!revealedHintMap[hintQuestion.id] : false}
+        revealedAnswer={hintQuestion ? !!revealedAnswerMap[hintQuestion.id] : false}
+        onClose={closeHintModal}
+        onRevealHint={revealHint}
+        onRevealAnswer={revealAnswer}
+      />
+
       <h2 className="text-xl font-bold mb-4">{test?.title}</h2>
+
       <h3 className="text-lg mb-2">{currentChapter?.title}</h3>
 
       <div className="mb-4 flex items-center justify-between">
@@ -549,14 +787,10 @@ export default function TestPage() {
       {currentChapter?.type === 'listening' && currentPiece && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white rounded-lg p-6 shadow-sm max-h-[70vh] overflow-y-auto text-left relative">
+            {/* عنصر الصوت مخفي بدون controls */}
             <audio ref={audioRef} preload="auto" className="hidden" />
 
-            {playCountdown != null && playCountdown > 0 && (
-              <div className="mt-3 p-3 bg-blue-50 border border-blue-100 rounded text-sm text-blue-700">
-                You have <span className="font-semibold">{playCountdown}</span> seconds to read the questions before the audio button appears.
-              </div>
-            )}
-
+            {/* زر التشغيل يظهر مباشرة إذا لم تُشغّل القطعة سابقًا */}
             {showPlayButton && !playedMapRef.current[currentPiece.id] && (
               <div className="mt-4 flex justify-center">
                 <button onClick={handlePlayAudioNow} className="flex items-center gap-2 px-3 py-2 border rounded-md bg-white shadow-sm text-sm text-slate-700" aria-label="Play audio">
@@ -567,7 +801,7 @@ export default function TestPage() {
             )}
 
             {isPlaying && <div className="mt-3 p-2 text-sm text-green-700">Audio is playing...</div>}
-            {!isPlaying && !showPlayButton && playCountdown == null && <div className="mt-3 text-sm text-slate-500">المقطع سيصبح قابلاً للتشغيل بعد انتهاء العد.</div>}
+            {!isPlaying && !showPlayButton && <div className="mt-3 text-sm text-slate-500">المقطع غير مشغّل حالياً.</div>}
           </div>
 
           <div>
@@ -591,7 +825,9 @@ export default function TestPage() {
                     <p className="text-lg font-medium"><span className="text-blue-600 mr-2 font-semibold">{i + 1}.</span>{q.question_text}</p>
                     <button type="button" onClick={() => toggleMark(q.id)} title="علامة للرجوع" className="text-yellow-600 ml-3"><Tag className={`w-4 h-4 ${markedMap[q.id] ? 'text-yellow-600' : 'text-slate-300'}`} /></button>
                   </div>
+
                   <div>
+                    {/* زر فتح الـ Hint يفتح النافذة المنبثقة */}
                     <Button onClick={() => openHintModal(q.id)} variant="outline" size="sm">Hint</Button>
                   </div>
                 </div>
@@ -611,7 +847,7 @@ export default function TestPage() {
         </div>
       )}
 
-      {/* Reading & Grammar (unchanged rendering) */}
+      {/* Reading */}
       {currentChapter?.type === 'reading' && currentPiece && (
         <div className="bg-white rounded-lg p-6 shadow-sm mb-6">
           {currentPiece.image_url && <div className="mb-4"><img src={currentPiece.image_url} alt={currentPiece.passage_title || 'passage image'} className="max-w-full h-auto rounded" /></div>}
@@ -638,6 +874,7 @@ export default function TestPage() {
         </div>
       )}
 
+      {/* Grammar */}
       {currentChapter?.type === 'grammar' && (
         <div className="space-y-4">
           {currentChapter.questions?.map((q, i) => (
