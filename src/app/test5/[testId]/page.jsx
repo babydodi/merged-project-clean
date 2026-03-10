@@ -107,13 +107,14 @@ export default function TestPage() {
   const [isLockedPlay, setIsLockedPlay] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // تتبع التشغيل لكل قطعة — لضمان التشغيل التلقائي مرة واحدة فقط لكل قطعة
+  // تتبع التشغيل لكل قطعة — لضمان التشغيل مرة واحدة فقط لكل قطعة
   const playedMapRef = useRef({}); // pieceId -> true
 
-  // من أجل ضبط تأخير التشغيل التلقائي
+  // من أجل ضبط تأخير ظهور زر التشغيل
   const playTimeoutRef = useRef(null);
   const playCountdownIntervalRef = useRef(null);
-  const [playCountdown, setPlayCountdown] = useState(null); // seconds remaining until autoplay
+  const [playCountdown, setPlayCountdown] = useState(null); // seconds remaining until play button appears
+  const [showPlayButton, setShowPlayButton] = useState(false); // زر التشغيل يظهر بعد العد
 
   // مجموع النقاط الممكنة للاختبار
   const [totalPossible, setTotalPossible] = useState(0);
@@ -429,7 +430,7 @@ export default function TestPage() {
     if (!alertedRef.current[currentChapterIndex]) alertedRef.current[currentChapterIndex] = new Set();
   }, [currentChapterIndex]);
 
-  // منطق الصوت — تشغيل تلقائي مرة واحدة لكل قطعة فقط مع تأخير يعتمد على عدد الأسئلة
+  // منطق ظهور زر التشغيل بعد العد التنازلي (بدون autoplay)
   useEffect(() => {
     // تنظيف أي تايمر أو عداد سابق
     if (playTimeoutRef.current) {
@@ -441,88 +442,50 @@ export default function TestPage() {
       playCountdownIntervalRef.current = null;
     }
     setPlayCountdown(null);
-
-    setIsLockedPlay(false);
+    setShowPlayButton(false);
     setIsPlaying(false);
-    lastTimeRef.current = 0;
 
-    const el = audioRef.current;
-    if (!el) return;
+    // إذا لا يوجد مقطع صوتي، لا نفعل شيء
+    if (!currentPiece?.audio_url) return;
 
-    try {
-      // إعادة ضبط الصوت
-      el.pause();
-      el.removeAttribute('src');
-      el.src = '';
-      el.load();
-
-      // ننتظر قليلًا ليتأكد DOM محدث
-      setTimeout(() => {
-        if (!audioRef.current || !currentPiece?.audio_url) return;
-
-        audioRef.current.src = currentPiece.audio_url;
-        audioRef.current.load();
-
-        // حساب التأخير: 15 ثانية لكل سؤال، بحد أقصى 45 ثانية
-        const numQs = (currentPiece.listening_questions || []).length || 1;
-        const delaySecs = Math.min(numQs * 15, 45);
-
-        // إذا هذه القطعة لم تُشغّل تلقائياً سابقًا → نعرض عداد القراءة ثم نحاول التشغيل
-        const alreadyPlayed = !!playedMapRef.current[currentPiece.id];
-
-        if (!alreadyPlayed) {
-          // ابدأ العد التنازلي للعرض للمستخدم
-          setPlayCountdown(delaySecs);
-          playCountdownIntervalRef.current = setInterval(() => {
-            setPlayCountdown(prev => {
-              if (prev == null) return null;
-              if (prev <= 1) {
-                clearInterval(playCountdownIntervalRef.current);
-                playCountdownIntervalRef.current = null;
-                return 0;
-              }
-              return prev - 1;
-            });
-          }, 1000);
-
-          // جدولة التشغيل التلقائي
-          playTimeoutRef.current = setTimeout(() => {
-            // حاول التشغيل التلقائي مرة واحدة
-            audioRef.current.play()
-              .then(() => {
-                setIsPlaying(true);
-                playedMapRef.current[currentPiece.id] = true;
-                setIsLockedPlay(false);
-                // تنظيف العداد
-                if (playCountdownIntervalRef.current) {
-                  clearInterval(playCountdownIntervalRef.current);
-                  playCountdownIntervalRef.current = null;
-                }
-                setPlayCountdown(null);
-              })
-              .catch(err => {
-                // المتصفح قد يمنع التشغيل التلقائي؛ نترك عناصر التحكم للمستخدم
-                console.warn('Autoplay failed:', err);
-                setIsPlaying(false);
-                setIsLockedPlay(false);
-                if (playCountdownIntervalRef.current) {
-                  clearInterval(playCountdownIntervalRef.current);
-                  playCountdownIntervalRef.current = null;
-                }
-                setPlayCountdown(null);
-              });
-            playTimeoutRef.current = null;
-          }, delaySecs * 1000);
-        } else {
-          // سبق وتشغّل → لا تعيد التشغيل، لا تعرض عداد
-          setPlayCountdown(null);
-          setIsPlaying(false);
-          setIsLockedPlay(false);
-        }
-      }, 150);
-    } catch (e) {
-      console.warn('audio init error', e);
+    // إذا المقطع سبق وتشغّل، لا نعرض زر ولا عداد
+    if (playedMapRef.current[currentPiece.id]) {
+      setShowPlayButton(false);
+      setPlayCountdown(null);
+      return;
     }
+
+    // حساب التأخير: 15 ثانية لكل سؤال، بحد أقصى 45 ثانية
+    const numQs = (currentPiece.listening_questions || []).length || 1;
+    const delaySecs = Math.min(numQs * 15, 45);
+
+    // ابدأ العد التنازلي لعرض رسالة وظهور الزر بعد انتهاء العد
+    setPlayCountdown(delaySecs);
+    playCountdownIntervalRef.current = setInterval(() => {
+      setPlayCountdown(prev => {
+        if (prev == null) return null;
+        if (prev <= 1) {
+          clearInterval(playCountdownIntervalRef.current);
+          playCountdownIntervalRef.current = null;
+          setPlayCountdown(0);
+          // بعد انتهاء العد، أظهر زر التشغيل (مرة واحدة)
+          setShowPlayButton(true);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    // safety timeout to ensure button appears even if interval missed
+    playTimeoutRef.current = setTimeout(() => {
+      if (playCountdownIntervalRef.current) {
+        clearInterval(playCountdownIntervalRef.current);
+        playCountdownIntervalRef.current = null;
+      }
+      setPlayCountdown(0);
+      setShowPlayButton(true);
+      playTimeoutRef.current = null;
+    }, delaySecs * 1000 + 200);
 
     return () => {
       if (playTimeoutRef.current) {
@@ -534,25 +497,38 @@ export default function TestPage() {
         playCountdownIntervalRef.current = null;
       }
       setPlayCountdown(null);
+      setShowPlayButton(false);
     };
   }, [currentPiece?.id]);
+
+  // مشغّل الصوت عند ضغط المستخدم على الزر (مرة واحدة فقط)
+  const handlePlayAudioNow = async () => {
+    if (!currentPiece?.audio_url || !audioRef.current) return;
+    try {
+      // ضبط مصدر الصوت (مخفي بدون controls)
+      audioRef.current.src = currentPiece.audio_url;
+      audioRef.current.load();
+
+      await audioRef.current.play();
+      setIsPlaying(true);
+      // علم أن هذه القطعة شغّلت مرة واحدة
+      playedMapRef.current[currentPiece.id] = true;
+      // أخفِ الزر حتى لو رجع المستخدم
+      setShowPlayButton(false);
+      setPlayCountdown(null);
+    } catch (err) {
+      console.warn('Play failed:', err);
+      // لو فشل التشغيل، نعرض رسالة داخل الواجهة
+      setCurrentAlert({ title: 'تعذر تشغيل الصوت', message: 'المتصفح منع التشغيل التلقائي. اضغط زر التشغيل مرة أخرى.', type: 'info' });
+    }
+  };
 
   useEffect(() => {
     const el = audioRef.current;
     if (!el) return;
 
     function onPause() {
-      if (isLockedPlay) {
-        el.play().catch(() => {});
-      } else {
-        setIsPlaying(false);
-      }
-    }
-
-    function onSeeking() {
-      if (isLockedPlay) {
-        el.currentTime = lastTimeRef.current || 0;
-      }
+      setIsPlaying(false);
     }
 
     function onTimeUpdate() {
@@ -565,24 +541,21 @@ export default function TestPage() {
     }
 
     el.addEventListener('pause', onPause);
-    el.addEventListener('seeking', onSeeking);
     el.addEventListener('timeupdate', onTimeUpdate);
     el.addEventListener('ended', onEnded);
 
     return () => {
       el.removeEventListener('pause', onPause);
-      el.removeEventListener('seeking', onSeeking);
       el.removeEventListener('timeupdate', onTimeUpdate);
       el.removeEventListener('ended', onEnded);
     };
-  }, [isLockedPlay, currentPiece?.id]);
+  }, [currentPiece?.id]);
 
   function stopAudioHardReset() {
     const el = audioRef.current;
     if (!el) return;
     try {
       el.pause();
-      el.removeAttribute('src');
       el.src = '';
       el.load();
       setIsLockedPlay(false);
@@ -597,6 +570,7 @@ export default function TestPage() {
         playCountdownIntervalRef.current = null;
       }
       setPlayCountdown(null);
+      setShowPlayButton(false);
     } catch {}
   }
 
@@ -973,11 +947,6 @@ export default function TestPage() {
     }
   };
 
-  const goToReview = () => {
-    if (!attemptId) return;
-    router.push(`/attempts/${attemptId}/review`);
-  };
-
   // Hint modal helpers
   const openHintModal = (questionId) => {
     setHintModalQuestionId(questionId);
@@ -1002,14 +971,24 @@ export default function TestPage() {
   );
 
   if (showResult) {
+    // عند نهاية الاختبار، هنا يمكن عرض ملخص الأخطاء والأسئلة الخاطئة
     return (
       <div className="p-6">
         <h1 className="text-2xl font-bold mb-4">{test?.title}</h1>
         <h2 className="text-lg mb-2">اكتمل الاختبار</h2>
         <div className="mb-4">النتيجة: {resultSummary ? `${resultSummary.percentage}%` : '—'}</div>
         <div className="mb-4">النقاط المحققة: {resultSummary ? resultSummary.totalAwarded : '—'} من {resultSummary ? resultSummary.totalPossible : totalPossible}</div>
-        <Button onClick={() => router.push('/dashboard')} variant="outline">الرئيسية</Button>
-        <Button className="ml-2" onClick={() => goToReview()}>راجع محاولتي</Button>
+
+        {/* عرض أسئلة خاطئة: يمكن جلبها من question_attempts أو من الذاكرة المحلية */}
+        <div className="mt-6">
+          <h3 className="font-semibold mb-2">الأسئلة الخاطئة</h3>
+          {/* يمكنك استبدال هذا الجزء بمنطق يعرض الأسئلة الخاطئة فعليًا من قاعدة البيانات */}
+          <div className="text-sm text-slate-600">سيتم عرض الأسئلة الخاطئة هنا لمراجعتك.</div>
+        </div>
+
+        <div className="mt-6">
+          <Button onClick={() => router.push('/dashboard')} variant="outline">الرئيسية</Button>
+        </div>
       </div>
     );
   }
@@ -1037,33 +1016,44 @@ export default function TestPage() {
       {/* Listening */}
       {currentChapter?.type === 'listening' && currentPiece && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white rounded-lg p-6 shadow-sm max-h-[70vh] overflow-y-auto text-left">
+          <div className="bg-white rounded-lg p-6 shadow-sm max-h-[70vh] overflow-y-auto text-left relative">
             <div className="mb-4">
+              {/* عنصر الصوت مخفي بدون controls لمنع تحكم المستخدم */}
               <audio
-                key={currentPiece?.id || 'audio-default'}
-                ref={(el) => { audioRef.current = el; }}
+                ref={audioRef}
                 preload="auto"
-                controls
-              >
-                <source src={currentPiece.audio_url} type="audio/mpeg" />
-                متصفحك لا يدعم عناصر الصوت.
-              </audio>
+                className="hidden"
+              />
 
-              {/* عرض رسالة العد التنازلي قبل بدء التشغيل التلقائي */}
+              {/* عرض رسالة العد التنازلي قبل ظهور زر التشغيل */}
               {playCountdown != null && playCountdown > 0 && (
                 <div className="mt-3 p-3 bg-blue-50 border border-blue-100 rounded text-sm text-blue-700">
-                  You have <span className="font-semibold">{playCountdown}</span> seconds to read the questions before the audio starts.
+                  You have <span className="font-semibold">{playCountdown}</span> seconds to read the questions before the audio button appears.
                 </div>
               )}
 
-              {!isPlaying && playCountdown == null && (
+              {/* زر التشغيل الصغير داخل مستطيل — يظهر بعد انتهاء العد */}
+              {showPlayButton && !playedMapRef.current[currentPiece.id] && (
+                <div className="mt-4 flex justify-center">
+                  <button
+                    onClick={handlePlayAudioNow}
+                    className="flex items-center gap-2 px-3 py-2 border rounded-md bg-white shadow-sm text-sm text-slate-700"
+                    aria-label="Play audio"
+                  >
+                    <Volume2 className="w-4 h-4" />
+                    <span>Play Audio</span>
+                  </button>
+                </div>
+              )}
+
+              {!isPlaying && !showPlayButton && playCountdown == null && (
                 <div className="mt-3">
-                  <div className="text-sm text-slate-500 mt-2">المقطع سيحاول التشغيل تلقائياً مرة واحدة بعد تأخير يعتمد على عدد الأسئلة. إذا لم يبدأ، اضغط زر التشغيل.</div>
+                  <div className="text-sm text-slate-500 mt-2">المقطع سيصبح قابلاً للتشغيل بعد انتهاء العد. اضغط زر Play عندما يظهر.</div>
                 </div>
               )}
 
-              {isLockedPlay && (
-                <div className="text-sm text-red-600 mt-3">المقطع قيد التشغيل وممنوع الإيقاف أو التخطي.</div>
+              {isPlaying && (
+                <div className="mt-3 p-2 text-sm text-green-700">Audio is playing...</div>
               )}
             </div>
           </div>
@@ -1116,7 +1106,7 @@ export default function TestPage() {
         </div>
       )}
 
-      {/* Reading & Grammar rendering kept as original structure (not modified here) */}
+      {/* Reading */}
       {currentChapter?.type === 'reading' && currentPiece && (
         <div className="bg-white rounded-lg p-6 shadow-sm mb-6">
           {currentPiece.image_url && (
@@ -1154,6 +1144,7 @@ export default function TestPage() {
         </div>
       )}
 
+      {/* Grammar */}
       {currentChapter?.type === 'grammar' && (
         <div className="space-y-4">
           {currentChapter.questions?.map((q, i) => (
@@ -1182,7 +1173,8 @@ export default function TestPage() {
         {/* استعادة تصميم زر التالي كما كان في الكود الأصلي */}
         <Button onClick={handleNext}>التالي <ChevronRight className="w-4 h-4 ml-2" /></Button>
         <div className="ml-auto">
-          <Button onClick={goToReview} variant="ghost">راجع المحاولة</Button>
+          {/* زر مراجعة المحاولة تمت إزالته من صفحة الاختبار كما طلبت.
+              المراجعة ستظهر فقط في نهاية الاختبار (showResult) مع عرض الأسئلة الخاطئة */}
         </div>
       </div>
     </div>
