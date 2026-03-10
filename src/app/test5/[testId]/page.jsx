@@ -3,31 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { Volume2, ChevronRight, ArrowLeft, Tag, Clock } from 'lucide-react';
+import { Volume2, ChevronRight, ArrowLeft, Tag } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 
-// ثابت التوقيت المطلوب حسب ترتيب الفصول (بالدقائق)
-const REQUIRED_MINUTES_BY_INDEX = {
-  0: 13,
-  1: 13,
-  2: 20,
-  3: 20,
-  4: 20,
-  5: 20,
-  6: 20,
-  7: 10,
-  8: 10,
-};
-
-// مساعد لتحويل دقائق إلى ثواني
+const REQUIRED_MINUTES_BY_INDEX = { 0:13,1:13,2:20,3:20,4:20,5:20,6:20,7:10,8:10 };
 const minsToSecs = (m) => Math.max(0, Math.round(m * 60));
 
-/* ---------- مكوّن عرض التنبيه (Banner) مع دعم Confirm ---------- */
 function AlertBanner({ alert, onClose }) {
   if (!alert) return null;
-
-  // alert shape:
-  // { title, message, type: 'info'|'confirm', confirmLabel, cancelLabel, onConfirm, onCancel }
   return (
     <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 w-[min(900px,95%)]">
       <div className="bg-white border shadow-md rounded p-4">
@@ -39,36 +22,11 @@ function AlertBanner({ alert, onClose }) {
           <div className="flex items-center gap-2">
             {alert.type === 'confirm' ? (
               <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    if (typeof alert.onCancel === 'function') alert.onCancel();
-                    if (onClose) onClose();
-                  }}
-                >
-                  {alert.cancelLabel || 'إلغاء'}
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    if (typeof alert.onConfirm === 'function') alert.onConfirm();
-                    if (onClose) onClose();
-                  }}
-                >
-                  {alert.confirmLabel || 'موافق'}
-                </Button>
+                <Button variant="outline" size="sm" onClick={() => { if (alert.onCancel) alert.onCancel(); if (onClose) onClose(); }}>{alert.cancelLabel || 'إلغاء'}</Button>
+                <Button size="sm" onClick={() => { if (alert.onConfirm) alert.onConfirm(); if (onClose) onClose(); }}>{alert.confirmLabel || 'موافق'}</Button>
               </>
             ) : (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  if (onClose) onClose();
-                }}
-              >
-                إغلاق
-              </Button>
+              <Button size="sm" variant="outline" onClick={() => { if (onClose) onClose(); }}>إغلاق</Button>
             )}
           </div>
         </div>
@@ -77,7 +35,6 @@ function AlertBanner({ alert, onClose }) {
   );
 }
 
-/* ---------- الصفحة الرئيسية ---------- */
 export default function TestPage() {
   const { testId: id } = useParams();
   const router = useRouter();
@@ -97,124 +54,61 @@ export default function TestPage() {
   const [markedMap, setMarkedMap] = useState({});
   const [validationError, setValidationError] = useState('');
 
-  // التوقيت لكل فصل
   const [chapterRemainingSecs, setChapterRemainingSecs] = useState(null);
   const timerRef = useRef(null);
 
-  // الصوت
+  // audio
   const audioRef = useRef(null);
   const lastTimeRef = useRef(0);
-  const [isLockedPlay, setIsLockedPlay] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // تتبع التشغيل لكل قطعة — لضمان التشغيل مرة واحدة فقط لكل قطعة
+  // played map to prevent re-showing button / re-playing
   const playedMapRef = useRef({}); // pieceId -> true
 
-  // من أجل ضبط تأخير ظهور زر التشغيل
+  // play button logic
   const playTimeoutRef = useRef(null);
   const playCountdownIntervalRef = useRef(null);
-  const [playCountdown, setPlayCountdown] = useState(null); // seconds remaining until play button appears
-  const [showPlayButton, setShowPlayButton] = useState(false); // زر التشغيل يظهر بعد العد
+  const [playCountdown, setPlayCountdown] = useState(null);
+  const [showPlayButton, setShowPlayButton] = useState(false);
 
-  // مجموع النقاط الممكنة للاختبار
   const [totalPossible, setTotalPossible] = useState(0);
   const [resultSummary, setResultSummary] = useState(null);
 
-  // Hint / Reveal state maps
-  const [hintModalOpen, setHintModalOpen] = useState(false);
-  const [hintModalQuestionId, setHintModalQuestionId] = useState(null);
-  const [revealedHintMap, setRevealedHintMap] = useState({}); // questionId -> true
-  const [revealedAnswerMap, setRevealedAnswerMap] = useState({}); // questionId -> true
-
-  // تنبيهات داخل الواجهة (بديل window.alert)
   const [currentAlert, setCurrentAlert] = useState(null);
   const alertTimeoutRef = useRef(null);
+  const alertedRef = useRef({});
 
-  // لتجنب تكرار التنبيهات الزمنية لكل فصل/عتبة
-  const alertedRef = useRef({}); // chapterIndex -> Set(thresholdSecs)
-
-  // لتخزين حل Promise عند استخدام confirm داخل الواجهة
-  const confirmResolveRef = useRef(null);
-
-  useEffect(() => {
-    initTest();
-    /* eslint-disable-next-line */
-  }, [id]);
+  useEffect(() => { initTest(); /* eslint-disable-next-line */ }, [id]);
 
   async function initTest() {
     try {
-      if (!id) {
-        setLoading(false);
-        return;
-      }
+      if (!id) { setLoading(false); return; }
       setLoading(true);
 
-      // إنشاء attempt
       const { data: userData } = await supabase.auth.getUser();
       const currentUser = userData?.user || null;
       const payload = currentUser ? { test_id: id, user_id: currentUser.id } : { test_id: id };
 
-      const { data: attempt, error: attemptErr } = await supabase
-        .from('test_attempts')
-        .insert(payload)
-        .select()
-        .single();
-
+      const { data: attempt, error: attemptErr } = await supabase.from('test_attempts').insert(payload).select().single();
       if (attemptErr) throw attemptErr;
       setAttemptId(attempt.id);
 
-      // اختبار
-      const { data: testData, error: testErr } = await supabase
-        .from('tests')
-        .select('*')
-        .eq('id', id)
-        .single();
-
+      const { data: testData, error: testErr } = await supabase.from('tests').select('*').eq('id', id).single();
       if (testErr) throw testErr;
       setTest(testData);
 
-      // فصول
-      const { data: chaptersData, error: chErr } = await supabase
-        .from('chapters')
-        .select('id, type, title, idx, duration_seconds')
-        .eq('test_id', id)
-        .order('idx', { ascending: true });
-
+      const { data: chaptersData, error: chErr } = await supabase.from('chapters').select('id, type, title, idx, duration_seconds').eq('test_id', id).order('idx', { ascending: true });
       if (chErr) throw chErr;
 
-      // تحميل محتوى كل فصل حسب نوعه
       const assembled = [];
-
       for (const ch of chaptersData || []) {
         if (ch.type === 'listening') {
-          const { data: pieces, error: lpErr } = await supabase
-            .from('listening_pieces')
-            .select(
-              `id, audio_url, transcript, idx,
-              listening_questions (
-                id, idx, question_text, options, answer, hint, explanation, points
-              )`
-            )
-            .eq('chapter_id', ch.id)
-            .order('idx', { ascending: true });
-
+          const { data: pieces, error: lpErr } = await supabase.from('listening_pieces').select(`id, audio_url, transcript, idx, listening_questions ( id, idx, question_text, options, answer, hint, explanation, points )`).eq('chapter_id', ch.id).order('idx', { ascending: true });
           if (lpErr) throw lpErr;
           assembled.push({ ...ch, pieces: pieces || [] });
         } else if (ch.type === 'reading') {
-          const { data: pieces, error: rpErr } = await supabase
-            .from('reading_pieces')
-            .select(
-              `id, passage_title, passage, idx, image_url,
-              reading_questions (
-                id, idx, question_text, options, answer, hint, explanation, base_text, underlined_words, underlined_positions, points
-              )`
-            )
-            .eq('chapter_id', ch.id)
-            .order('idx', { ascending: true });
-
+          const { data: pieces, error: rpErr } = await supabase.from('reading_pieces').select(`id, passage_title, passage, idx, image_url, reading_questions ( id, idx, question_text, options, answer, hint, explanation, base_text, underlined_words, underlined_positions, points )`).eq('chapter_id', ch.id).order('idx', { ascending: true });
           if (rpErr) throw rpErr;
-
-          // تفكيك الفقرات إذا كانت مرقمة
           const normalizedPieces = (pieces || []).map(p => {
             const piece = { ...p };
             if (piece.passage && typeof piece.passage === 'string') {
@@ -228,56 +122,31 @@ export default function TestPage() {
             }
             return piece;
           });
-
           assembled.push({ ...ch, pieces: normalizedPieces });
         } else if (ch.type === 'grammar') {
-          const { data: questions, error: gErr } = await supabase
-            .from('grammar_questions')
-            .select('id, idx, question_text, options, answer, hint, explanation, category, base_text, underlined_words, underlined_positions, points')
-            .eq('chapter_id', ch.id)
-            .order('idx', { ascending: true });
-
+          const { data: questions, error: gErr } = await supabase.from('grammar_questions').select('id, idx, question_text, options, answer, hint, explanation, category, base_text, underlined_words, underlined_positions, points').eq('chapter_id', ch.id).order('idx', { ascending: true });
           if (gErr) throw gErr;
           assembled.push({ ...ch, questions: questions || [] });
         }
       }
 
-      // ترتيب بحسب idx كما في DB
-      assembled.sort((a, b) => (a.idx ?? 0) - (b.idx ?? 0));
-
-      // فرض التوقيت المطلوب لو غير موجود
-      const enforced = assembled.map((ch, i) => {
+      assembled.sort((a,b) => (a.idx ?? 0) - (b.idx ?? 0));
+      const enforced = assembled.map((ch,i) => {
         const mins = REQUIRED_MINUTES_BY_INDEX[i];
         const enforcedDuration = mins != null ? minsToSecs(mins) : ch.duration_seconds;
         return { ...ch, duration_seconds: enforcedDuration };
       });
 
-      // حساب مجموع النقاط الممكنة من الأسئلة المحمّلة
       let total = 0;
       for (const ch of enforced) {
-        if (ch.type === 'listening') {
-          for (const p of (ch.pieces || [])) {
-            for (const q of (p.listening_questions || [])) {
-              total += Number(q.points || 1);
-            }
-          }
-        } else if (ch.type === 'reading') {
-          for (const p of (ch.pieces || [])) {
-            for (const q of (p.reading_questions || [])) {
-              total += Number(q.points || 1);
-            }
-          }
-        } else if (ch.type === 'grammar') {
-          for (const q of (ch.questions || [])) {
-            total += Number(q.points || 1);
-          }
-        }
+        if (ch.type === 'listening') for (const p of (ch.pieces||[])) for (const q of (p.listening_questions||[])) total += Number(q.points||1);
+        if (ch.type === 'reading') for (const p of (ch.pieces||[])) for (const q of (p.reading_questions||[])) total += Number(q.points||1);
+        if (ch.type === 'grammar') for (const q of (ch.questions||[])) total += Number(q.points||1);
       }
 
       setChapters(enforced);
       setTotalPossible(total);
 
-      // إعادة الضبط
       setCurrentChapterIndex(0);
       setCurrentPieceIndex(0);
       setShowResult(false);
@@ -290,54 +159,34 @@ export default function TestPage() {
       alertedRef.current = {};
       playedMapRef.current = {};
 
-      // بدء المؤقت للفصل الأول
       const firstDuration = enforced[0]?.duration_seconds ?? minsToSecs(13);
       setChapterRemainingSecs(firstDuration);
       startChapterTimer(firstDuration);
-    } catch (error) {
-      console.error('Init error:', error);
+    } catch (err) {
+      console.error('Init error:', err);
     } finally {
       setLoading(false);
     }
   }
 
-  // مؤقت الفصل
   function startChapterTimer(totalSecs) {
     clearInterval(timerRef.current);
     setChapterRemainingSecs(totalSecs);
     if (!alertedRef.current[currentChapterIndex]) alertedRef.current[currentChapterIndex] = new Set();
-
     timerRef.current = setInterval(() => {
       setChapterRemainingSecs(prev => {
         if (prev == null) return null;
-        if (prev <= 1) {
-          clearInterval(timerRef.current);
-          handleChapterTimeout();
-          return 0;
-        }
+        if (prev <= 1) { clearInterval(timerRef.current); handleChapterTimeout(); return 0; }
         return prev - 1;
       });
     }, 1000);
   }
+  function stopChapterTimer() { clearInterval(timerRef.current); }
 
-  function stopChapterTimer() {
-    clearInterval(timerRef.current);
-  }
-
-  // عند انتهاء الوقت: احفظ الفصل وانتقل
   async function handleChapterTimeout() {
     await saveAllAnswersInCurrentChapter();
     goToNextChapterOrFinish();
   }
-
-  // تنسيق الوقت
-  const formatMMSS = (secs) => {
-    const m = Math.floor((secs || 0) / 60);
-    const s = Math.floor((secs || 0) % 60);
-    const mm = String(m).padStart(2, '0');
-    const ss = String(s).padStart(2, '0');
-    return `${mm}:${ss}`;
-  };
 
   const currentChapter = useMemo(() => chapters[currentChapterIndex], [chapters, currentChapterIndex]);
   const currentPiece = useMemo(() => {
@@ -346,120 +195,62 @@ export default function TestPage() {
     return currentChapter.pieces?.[currentPieceIndex] || null;
   }, [currentChapter, currentPieceIndex]);
 
-  // حفظ الإجابات في الفصل الحالي (يشمل points_awarded)
   async function saveAllAnswersInCurrentChapter() {
     if (!attemptId || !currentChapter) return;
     const rows = [];
-
     if (currentChapter.type === 'listening') {
-      for (const p of (currentChapter.pieces || [])) {
-        for (const q of (p.listening_questions || [])) {
-          const selected = answers[q.id];
-          const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
-          const pointsAwarded = isCorrect ? Number(q.points || 1) : 0;
-          rows.push({
-            attempt_id: attemptId,
-            question_id: q.id,
-            question_type: 'listening',
-            selected_choice: selected != null ? String(selected) : null,
-            is_correct: isCorrect,
-            points_awarded: pointsAwarded,
-            answered_at: new Date().toISOString(),
-          });
-          if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
-        }
-      }
-    } else if (currentChapter.type === 'reading') {
-      for (const p of (currentChapter.pieces || [])) {
-        for (const q of (p.reading_questions || [])) {
-          const selected = answers[q.id];
-          const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
-          const pointsAwarded = isCorrect ? Number(q.points || 1) : 0;
-          rows.push({
-            attempt_id: attemptId,
-            question_id: q.id,
-            question_type: 'reading',
-            selected_choice: selected != null ? String(selected) : null,
-            is_correct: isCorrect,
-            points_awarded: pointsAwarded,
-            answered_at: new Date().toISOString(),
-          });
-          if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
-        }
-      }
-    } else if (currentChapter.type === 'grammar') {
-      for (const q of (currentChapter.questions || [])) {
+      for (const p of (currentChapter.pieces||[])) for (const q of (p.listening_questions||[])) {
         const selected = answers[q.id];
         const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
-        const pointsAwarded = isCorrect ? Number(q.points || 1) : 0;
-        rows.push({
-          attempt_id: attemptId,
-          question_id: q.id,
-          question_type: 'grammar',
-          selected_choice: selected != null ? String(selected) : null,
-          is_correct: isCorrect,
-          points_awarded: pointsAwarded,
-          answered_at: new Date().toISOString(),
-        });
+        const pointsAwarded = isCorrect ? Number(q.points||1) : 0;
+        rows.push({ attempt_id: attemptId, question_id: q.id, question_type: 'listening', selected_choice: selected != null ? String(selected) : null, is_correct: isCorrect, points_awarded: pointsAwarded, answered_at: new Date().toISOString() });
+        if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
+      }
+    } else if (currentChapter.type === 'reading') {
+      for (const p of (currentChapter.pieces||[])) for (const q of (p.reading_questions||[])) {
+        const selected = answers[q.id];
+        const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
+        const pointsAwarded = isCorrect ? Number(q.points||1) : 0;
+        rows.push({ attempt_id: attemptId, question_id: q.id, question_type: 'reading', selected_choice: selected != null ? String(selected) : null, is_correct: isCorrect, points_awarded: pointsAwarded, answered_at: new Date().toISOString() });
+        if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
+      }
+    } else if (currentChapter.type === 'grammar') {
+      for (const q of (currentChapter.questions||[])) {
+        const selected = answers[q.id];
+        const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
+        const pointsAwarded = isCorrect ? Number(q.points||1) : 0;
+        rows.push({ attempt_id: attemptId, question_id: q.id, question_type: 'grammar', selected_choice: selected != null ? String(selected) : null, is_correct: isCorrect, points_awarded: pointsAwarded, answered_at: new Date().toISOString() });
         if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
       }
     }
-
     if (rows.length) {
       const { error } = await supabase.from('question_attempts').upsert(rows, { onConflict: ['attempt_id', 'question_id'] });
       if (error) console.error('saveAllAnswers error', error);
     }
   }
 
-  // عند الانتقال بين الفصول، أعِد المؤقت بناءً على الفصل الجديد
+  // ------------- إصلاح ظهور زر التشغيل -------------
   useEffect(() => {
-    if (!currentChapter) return;
-    stopAudioHardReset();
-    stopChapterTimer();
-    const secs = currentChapter.duration_seconds ?? minsToSecs(REQUIRED_MINUTES_BY_INDEX[currentChapterIndex] || 20);
-    startChapterTimer(secs);
-    setCurrentPieceIndex(0);
-    setValidationError('');
-    // إيقاف الصوت المفتوح
-    try {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-      }
-    } catch {}
-    if (!alertedRef.current[currentChapterIndex]) alertedRef.current[currentChapterIndex] = new Set();
-  }, [currentChapterIndex]);
-
-  // منطق ظهور زر التشغيل بعد العد التنازلي (بدون autoplay)
-  useEffect(() => {
-    // تنظيف أي تايمر أو عداد سابق
-    if (playTimeoutRef.current) {
-      clearTimeout(playTimeoutRef.current);
-      playTimeoutRef.current = null;
-    }
-    if (playCountdownIntervalRef.current) {
-      clearInterval(playCountdownIntervalRef.current);
-      playCountdownIntervalRef.current = null;
-    }
+    // تنظيف سابق
+    if (playTimeoutRef.current) { clearTimeout(playTimeoutRef.current); playTimeoutRef.current = null; }
+    if (playCountdownIntervalRef.current) { clearInterval(playCountdownIntervalRef.current); playCountdownIntervalRef.current = null; }
     setPlayCountdown(null);
     setShowPlayButton(false);
     setIsPlaying(false);
 
-    // إذا لا يوجد مقطع صوتي، لا نفعل شيء
     if (!currentPiece?.audio_url) return;
 
-    // إذا المقطع سبق وتشغّل، لا نعرض زر ولا عداد
+    // إذا سبق وتشغّل هذه القطعة فلا نعرض زر
     if (playedMapRef.current[currentPiece.id]) {
       setShowPlayButton(false);
       setPlayCountdown(null);
       return;
     }
 
-    // حساب التأخير: 15 ثانية لكل سؤال، بحد أقصى 45 ثانية
     const numQs = (currentPiece.listening_questions || []).length || 1;
     const delaySecs = Math.min(numQs * 15, 45);
 
-    // ابدأ العد التنازلي لعرض رسالة وظهور الزر بعد انتهاء العد
+    // عرض العد التنازلي فوراً
     setPlayCountdown(delaySecs);
     playCountdownIntervalRef.current = setInterval(() => {
       setPlayCountdown(prev => {
@@ -467,83 +258,55 @@ export default function TestPage() {
         if (prev <= 1) {
           clearInterval(playCountdownIntervalRef.current);
           playCountdownIntervalRef.current = null;
-          setPlayCountdown(0);
-          // بعد انتهاء العد، أظهر زر التشغيل (مرة واحدة)
-          setShowPlayButton(true);
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
 
-    // safety timeout to ensure button appears even if interval missed
+    // بعد delaySecs نعرض الزر (مرة واحدة)
     playTimeoutRef.current = setTimeout(() => {
-      if (playCountdownIntervalRef.current) {
-        clearInterval(playCountdownIntervalRef.current);
-        playCountdownIntervalRef.current = null;
-      }
-      setPlayCountdown(0);
-      setShowPlayButton(true);
+      // تأكد أن القطعة لم تُشغّل أثناء الانتظار
+      if (!playedMapRef.current[currentPiece.id]) setShowPlayButton(true);
+      setPlayCountdown(null);
+      if (playCountdownIntervalRef.current) { clearInterval(playCountdownIntervalRef.current); playCountdownIntervalRef.current = null; }
       playTimeoutRef.current = null;
-    }, delaySecs * 1000 + 200);
+    }, delaySecs * 1000);
 
     return () => {
-      if (playTimeoutRef.current) {
-        clearTimeout(playTimeoutRef.current);
-        playTimeoutRef.current = null;
-      }
-      if (playCountdownIntervalRef.current) {
-        clearInterval(playCountdownIntervalRef.current);
-        playCountdownIntervalRef.current = null;
-      }
+      if (playTimeoutRef.current) { clearTimeout(playTimeoutRef.current); playTimeoutRef.current = null; }
+      if (playCountdownIntervalRef.current) { clearInterval(playCountdownIntervalRef.current); playCountdownIntervalRef.current = null; }
       setPlayCountdown(null);
       setShowPlayButton(false);
     };
   }, [currentPiece?.id]);
 
-  // مشغّل الصوت عند ضغط المستخدم على الزر (مرة واحدة فقط)
+  // تشغيل الصوت عند ضغط المستخدم (مرة واحدة فقط)
   const handlePlayAudioNow = async () => {
     if (!currentPiece?.audio_url || !audioRef.current) return;
     try {
-      // ضبط مصدر الصوت (مخفي بدون controls)
       audioRef.current.src = currentPiece.audio_url;
       audioRef.current.load();
-
       await audioRef.current.play();
       setIsPlaying(true);
-      // علم أن هذه القطعة شغّلت مرة واحدة
       playedMapRef.current[currentPiece.id] = true;
-      // أخفِ الزر حتى لو رجع المستخدم
       setShowPlayButton(false);
       setPlayCountdown(null);
     } catch (err) {
       console.warn('Play failed:', err);
-      // لو فشل التشغيل، نعرض رسالة داخل الواجهة
-      setCurrentAlert({ title: 'تعذر تشغيل الصوت', message: 'المتصفح منع التشغيل التلقائي. اضغط زر التشغيل مرة أخرى.', type: 'info' });
+      setCurrentAlert({ title: 'تعذر تشغيل الصوت', message: 'المتصفح منع التشغيل. حاول الضغط مرة أخرى.', type: 'info' });
     }
   };
 
   useEffect(() => {
     const el = audioRef.current;
     if (!el) return;
-
-    function onPause() {
-      setIsPlaying(false);
-    }
-
-    function onTimeUpdate() {
-      lastTimeRef.current = el.currentTime;
-    }
-
-    function onEnded() {
-      setIsLockedPlay(false);
-      setIsPlaying(false);
-    }
-
+    function onPause() { setIsPlaying(false); }
+    function onTimeUpdate() { lastTimeRef.current = el.currentTime; }
+    function onEnded() { setIsPlaying(false); }
     el.addEventListener('pause', onPause);
     el.addEventListener('timeupdate', onTimeUpdate);
     el.addEventListener('ended', onEnded);
-
     return () => {
       el.removeEventListener('pause', onPause);
       el.removeEventListener('timeupdate', onTimeUpdate);
@@ -558,172 +321,68 @@ export default function TestPage() {
       el.pause();
       el.src = '';
       el.load();
-      setIsLockedPlay(false);
       setIsPlaying(false);
       lastTimeRef.current = 0;
-      if (playTimeoutRef.current) {
-        clearTimeout(playTimeoutRef.current);
-        playTimeoutRef.current = null;
-      }
-      if (playCountdownIntervalRef.current) {
-        clearInterval(playCountdownIntervalRef.current);
-        playCountdownIntervalRef.current = null;
-      }
+      if (playTimeoutRef.current) { clearTimeout(playTimeoutRef.current); playTimeoutRef.current = null; }
+      if (playCountdownIntervalRef.current) { clearInterval(playCountdownIntervalRef.current); playCountdownIntervalRef.current = null; }
       setPlayCountdown(null);
       setShowPlayButton(false);
     } catch {}
   }
 
-  const handleSelect = (questionId, value) => {
-    setAnswers(prev => ({ ...prev, [questionId]: value }));
-    setAnsweredMap(prev => ({ ...prev, [questionId]: true }));
-  };
+  const handleSelect = (questionId, value) => { setAnswers(prev => ({ ...prev, [questionId]: value })); setAnsweredMap(prev => ({ ...prev, [questionId]: true })); };
+  const toggleMark = (questionId) => { setMarkedMap(prev => { const next = { ...prev }; if (next[questionId]) delete next[questionId]; else next[questionId] = true; return next; }); };
+  const goToQuestionInCurrent = (questionId) => { const el = document.getElementById(`q-${questionId}`); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
 
-  const toggleMark = (questionId) => {
-    setMarkedMap(prev => {
-      const next = { ...prev };
-      if (next[questionId]) delete next[questionId];
-      else next[questionId] = true;
-      return next;
-    });
-  };
-
-  const goToQuestionInCurrent = (questionId) => {
-    const el = document.getElementById(`q-${questionId}`);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  };
-
-  const getUnansweredInChapter = (chapter) => {
-    const qIds = [];
-    if (!chapter) return qIds;
-    if (chapter.type === 'listening') {
-      for (const p of (chapter.pieces || [])) for (const q of (p.listening_questions || [])) if (!answeredMap[q.id]) qIds.push(q.id);
-    } else if (chapter.type === 'reading') {
-      for (const p of (chapter.pieces || [])) for (const q of (p.reading_questions || [])) if (!answeredMap[q.id]) qIds.push(q.id);
-    } else if (chapter.type === 'grammar') {
-      for (const q of (chapter.questions || [])) if (!answeredMap[q.id]) qIds.push(q.id);
-    }
-    return qIds;
-  };
-
-  // مراقبة الوقت المتبقي لإظهار التنبيهات عند العتبات المطلوبة (باستخدام AlertBanner)
   useEffect(() => {
     if (!currentChapter || chapterRemainingSecs == null) return;
     const totalSecs = currentChapter.duration_seconds || 0;
     const chapterIdx = currentChapterIndex;
     const alertedSet = alertedRef.current[chapterIdx] || new Set();
-
     const thresholds = [];
-
-    if (totalSecs >= minsToSecs(10) && totalSecs <= minsToSecs(13)) {
-      thresholds.push(minsToSecs(5));
-    } else if (totalSecs >= minsToSecs(20)) {
-      thresholds.push(minsToSecs(10), minsToSecs(5));
-    } else if (totalSecs >= minsToSecs(10) && totalSecs < minsToSecs(20)) {
-      thresholds.push(minsToSecs(5));
-    }
-
+    if (totalSecs >= minsToSecs(10) && totalSecs <= minsToSecs(13)) thresholds.push(minsToSecs(5));
+    else if (totalSecs >= minsToSecs(20)) thresholds.push(minsToSecs(10), minsToSecs(5));
+    else if (totalSecs >= minsToSecs(10) && totalSecs < minsToSecs(20)) thresholds.push(minsToSecs(5));
     for (const t of thresholds) {
       if (chapterRemainingSecs <= t && !alertedSet.has(t)) {
         alertedSet.add(t);
         alertedRef.current[chapterIdx] = alertedSet;
-
-        // عرض تنبيه داخل الواجهة
         const minutesLeft = Math.ceil(t / 60);
-        const title = `تبقى ${minutesLeft} دقيقة${minutesLeft > 1 ? '' : ''}`;
+        const title = `تبقى ${minutesLeft} دقيقة`;
         const message = `الوقت المتبقي في هذا القسم الآن ${formatMMSS(chapterRemainingSecs)}. استخدم الوقت بحكمة.`;
-
-        // عرض التنبيه لبضع ثوانٍ
         setCurrentAlert({ title, message, type: 'info' });
         if (alertTimeoutRef.current) clearTimeout(alertTimeoutRef.current);
-        alertTimeoutRef.current = setTimeout(() => {
-          setCurrentAlert(null);
-        }, 7000);
+        alertTimeoutRef.current = setTimeout(() => setCurrentAlert(null), 7000);
       }
     }
   }, [chapterRemainingSecs, currentChapterIndex, currentChapter]);
 
-  // دالة لعرض Confirm داخل الواجهة (تعيد Promise<boolean>)
   function showConfirm({ title, message, confirmLabel = 'موافق', cancelLabel = 'إلغاء' }) {
     return new Promise((resolve) => {
-      confirmResolveRef.current = resolve;
-      setCurrentAlert({
-        title,
-        message,
-        type: 'confirm',
-        confirmLabel,
-        cancelLabel,
-        onConfirm: () => {
-          if (confirmResolveRef.current) confirmResolveRef.current(true);
-          confirmResolveRef.current = null;
-          setCurrentAlert(null);
-        },
-        onCancel: () => {
-          if (confirmResolveRef.current) confirmResolveRef.current(false);
-          confirmResolveRef.current = null;
-          setCurrentAlert(null);
-        }
-      });
+      const onConfirm = () => { resolve(true); setCurrentAlert(null); };
+      const onCancel = () => { resolve(false); setCurrentAlert(null); };
+      setCurrentAlert({ title, message, type: 'confirm', confirmLabel, cancelLabel, onConfirm, onCancel });
     });
   }
 
-  // إغلاق التنبيه اليدوي
   const closeAlert = () => {
     setCurrentAlert(null);
-    if (alertTimeoutRef.current) {
-      clearTimeout(alertTimeoutRef.current);
-      alertTimeoutRef.current = null;
-    }
-    if (confirmResolveRef.current) {
-      // إذا كان هناك confirm مفتوح ولم يقرر المستخدم، نعتبره إلغاء
-      confirmResolveRef.current(false);
-      confirmResolveRef.current = null;
-    }
+    if (alertTimeoutRef.current) { clearTimeout(alertTimeoutRef.current); alertTimeoutRef.current = null; }
   };
 
   async function finalizeScoresAndFinish() {
     if (!attemptId) return;
-
-    // جلب محاولات الأسئلة مع نقاط
-    const { data: attemptsRows = [], error: attemptsErr } = await supabase
-      .from('question_attempts')
-      .select('question_id, question_type, selected_choice, is_correct, points_awarded')
-      .eq('attempt_id', attemptId);
-
-    if (attemptsErr) {
-      console.error('fetch question_attempts error', attemptsErr);
-      return;
-    }
-
-    // حساب مجموع النقاط الممنوحة
+    const { data: attemptsRows = [], error: attemptsErr } = await supabase.from('question_attempts').select('question_id, question_type, selected_choice, is_correct, points_awarded').eq('attempt_id', attemptId);
+    if (attemptsErr) { console.error('fetch question_attempts error', attemptsErr); return; }
     let totalAwarded = 0;
-    for (const r of attemptsRows) {
-      totalAwarded += Number(r.points_awarded || 0);
-    }
-
-    // استخدم totalPossible المحسوب عند initTest (في الحالة)
+    for (const r of attemptsRows) totalAwarded += Number(r.points_awarded || 0);
     const totalPossibleLocal = Number(totalPossible || 0);
-
-    // حساب النسبة
     const percentage = totalPossibleLocal ? Math.round((totalAwarded / totalPossibleLocal) * 10000) / 100 : 0;
     const totalScore = Math.round(percentage);
-
-    // حفظ النتيجة (upsert حسب attempt_id)
-    const { error: upsertErr } = await supabase.from('user_results').upsert({
-      attempt_id: attemptId,
-      score: totalScore,
-      total_questions: attemptsRows.length,
-      percentage,
-      total_possible: totalPossibleLocal,
-    }, { onConflict: ['attempt_id'] });
-
+    const { error: upsertErr } = await supabase.from('user_results').upsert({ attempt_id: attemptId, score: totalScore, total_questions: attemptsRows.length, percentage, total_possible: totalPossibleLocal }, { onConflict: ['attempt_id'] });
     if (upsertErr) console.error('Error saving user result:', upsertErr);
-
-    // تحديث completed_at في test_attempts
     const { error: completeErr } = await supabase.from('test_attempts').update({ completed_at: new Date().toISOString() }).eq('id', attemptId);
     if (completeErr) console.error('Error updating attempt completion time:', completeErr);
-
-    // حفظ ملخص محلي للعرض
     setResultSummary({ totalAwarded, totalPossible: totalPossibleLocal, percentage, totalScore });
     setShowResult(true);
     stopChapterTimer();
@@ -733,30 +392,16 @@ export default function TestPage() {
   async function goToNextChapterOrFinish() {
     const unanswered = getUnansweredInChapter(currentChapter);
     if (unanswered.length > 0) {
-      // استخدم confirm داخل الواجهة بدل window.confirm
-      const ok = await showConfirm({
-        title: `فيه ${unanswered.length} سؤال غير مُجاب في هذا الفصل`,
-        message: 'تبي تتابع للفصل التالي؟',
-        confirmLabel: 'نعم، تابع',
-        cancelLabel: 'لا، أرجع'
-      });
-      if (!ok) {
-        goToQuestionInCurrent(unanswered[0]);
-        return;
-      }
+      const ok = await showConfirm({ title: `فيه ${unanswered.length} سؤال غير مُجاب في هذا الفصل`, message: 'تبي تتابع للفصل التالي؟', confirmLabel: 'نعم، تابع', cancelLabel: 'لا، أرجع' });
+      if (!ok) { goToQuestionInCurrent(unanswered[0]); return; }
     }
-
-    if (currentChapterIndex < chapters.length - 1) {
-      setCurrentChapterIndex(i => i + 1);
-      setCurrentPieceIndex(0);
-    } else {
-      await finalizeScoresAndFinish();
-    }
+    if (currentChapterIndex < chapters.length - 1) { setCurrentChapterIndex(i => i + 1); setCurrentPieceIndex(0); }
+    else { await finalizeScoresAndFinish(); }
   }
 
   const handleNext = async () => {
     if (!currentChapter) return;
-
+    // حفظ إجابات القطعة الحالية (كما في الكود السابق)
     if (currentChapter.type === 'listening') {
       const p = currentChapter.pieces?.[currentPieceIndex];
       if (p) {
@@ -765,35 +410,18 @@ export default function TestPage() {
           const selected = answers[q.id];
           const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
           const pointsAwarded = isCorrect ? Number(q.points || 1) : 0;
-          rows.push({
-            attempt_id: attemptId,
-            question_id: q.id,
-            question_type: 'listening',
-            selected_choice: selected != null ? String(selected) : null,
-            is_correct: isCorrect,
-            points_awarded: pointsAwarded,
-            answered_at: new Date().toISOString(),
-          });
+          rows.push({ attempt_id: attemptId, question_id: q.id, question_type: 'listening', selected_choice: selected != null ? String(selected) : null, is_correct: isCorrect, points_awarded: pointsAwarded, answered_at: new Date().toISOString() });
           if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
         }
-        if (rows.length) {
-          const { error } = await supabase.from('question_attempts').upsert(rows, { onConflict: ['attempt_id', 'question_id'] });
-          if (error) console.error('save listening piece answers error', error);
-        }
+        if (rows.length) { const { error } = await supabase.from('question_attempts').upsert(rows, { onConflict: ['attempt_id', 'question_id'] }); if (error) console.error('save listening piece answers error', error); }
       }
-
       const last = (currentChapter.pieces?.length || 1) - 1;
-      if (currentPieceIndex < last) {
-        stopAudioHardReset();
-        setCurrentPieceIndex(i => i + 1);
-        return;
-      }
-
+      if (currentPieceIndex < last) { stopAudioHardReset(); setCurrentPieceIndex(i => i + 1); return; }
       await saveAllAnswersInCurrentChapter();
       goToNextChapterOrFinish();
       return;
     }
-
+    // reading & grammar same as before
     if (currentChapter.type === 'reading') {
       const p = currentChapter.pieces?.[currentPieceIndex];
       if (p) {
@@ -802,60 +430,30 @@ export default function TestPage() {
           const selected = answers[q.id];
           const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
           const pointsAwarded = isCorrect ? Number(q.points || 1) : 0;
-          rows.push({
-            attempt_id: attemptId,
-            question_id: q.id,
-            question_type: 'reading',
-            selected_choice: selected != null ? String(selected) : null,
-            is_correct: isCorrect,
-            points_awarded: pointsAwarded,
-            answered_at: new Date().toISOString(),
-          });
+          rows.push({ attempt_id: attemptId, question_id: q.id, question_type: 'reading', selected_choice: selected != null ? String(selected) : null, is_correct: isCorrect, points_awarded: pointsAwarded, answered_at: new Date().toISOString() });
           if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
         }
-        if (rows.length) {
-          const { error } = await supabase.from('question_attempts').upsert(rows, { onConflict: ['attempt_id', 'question_id'] });
-          if (error) console.error('save reading piece answers error', error);
-        }
+        if (rows.length) { const { error } = await supabase.from('question_attempts').upsert(rows, { onConflict: ['attempt_id', 'question_id'] }); if (error) console.error('save reading piece answers error', error); }
       }
-
       const last = (currentChapter.pieces?.length || 1) - 1;
-      if (currentPieceIndex < last) {
-        setCurrentPieceIndex(i => i + 1);
-        return;
-      }
-
+      if (currentPieceIndex < last) { setCurrentPieceIndex(i => i + 1); return; }
       await saveAllAnswersInCurrentChapter();
       goToNextChapterOrFinish();
       return;
     }
-
     if (currentChapter.type === 'grammar') {
       const q = currentChapter.questions?.[currentPieceIndex];
       if (q) {
         const selected = answers[q.id];
         const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
         const pointsAwarded = isCorrect ? Number(q.points || 1) : 0;
-        const row = {
-          attempt_id: attemptId,
-          question_id: q.id,
-          question_type: 'grammar',
-          selected_choice: selected != null ? String(selected) : null,
-          is_correct: isCorrect,
-          points_awarded: pointsAwarded,
-          answered_at: new Date().toISOString(),
-        };
+        const row = { attempt_id: attemptId, question_id: q.id, question_type: 'grammar', selected_choice: selected != null ? String(selected) : null, is_correct: isCorrect, points_awarded: pointsAwarded, answered_at: new Date().toISOString() };
         const { error } = await supabase.from('question_attempts').upsert([row], { onConflict: ['attempt_id', 'question_id'] });
         if (error) console.error('save grammar question error', error);
         if (selected != null) setAnsweredMap(prev => ({ ...prev, [q.id]: true }));
       }
-
       const last = (currentChapter.questions?.length || 1) - 1;
-      if (currentPieceIndex < last) {
-        setCurrentPieceIndex(i => i + 1);
-        return;
-      }
-
+      if (currentPieceIndex < last) { setCurrentPieceIndex(i => i + 1); return; }
       await saveAllAnswersInCurrentChapter();
       goToNextChapterOrFinish();
       return;
@@ -864,7 +462,7 @@ export default function TestPage() {
 
   const handlePrev = async () => {
     if (!currentChapter) return;
-
+    // حفظ إجابات مشابهة كما في الكود السابق ثم التنقل
     if (currentChapter.type === 'listening') {
       const p = currentChapter.pieces?.[currentPieceIndex];
       if (p) {
@@ -873,29 +471,13 @@ export default function TestPage() {
           const selected = answers[q.id];
           const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
           const pointsAwarded = isCorrect ? Number(q.points || 1) : 0;
-          rows.push({
-            attempt_id: attemptId,
-            question_id: q.id,
-            question_type: 'listening',
-            selected_choice: selected != null ? String(selected) : null,
-            is_correct: isCorrect,
-            points_awarded: pointsAwarded,
-            answered_at: new Date().toISOString(),
-          });
+          rows.push({ attempt_id: attemptId, question_id: q.id, question_type: 'listening', selected_choice: selected != null ? String(selected) : null, is_correct: isCorrect, points_awarded: pointsAwarded, answered_at: new Date().toISOString() });
         }
-        if (rows.length) {
-          const { error } = await supabase.from('question_attempts').upsert(rows, { onConflict: ['attempt_id', 'question_id'] });
-          if (error) console.error('save prev listening answers error', error);
-        }
+        if (rows.length) { const { error } = await supabase.from('question_attempts').upsert(rows, { onConflict: ['attempt_id', 'question_id'] }); if (error) console.error('save prev listening answers error', error); }
       }
-
-      if (currentPieceIndex > 0) {
-        stopAudioHardReset();
-        setCurrentPieceIndex(i => i - 1);
-      }
+      if (currentPieceIndex > 0) { stopAudioHardReset(); setCurrentPieceIndex(i => i - 1); }
       return;
     }
-
     if (currentChapter.type === 'reading') {
       const p = currentChapter.pieces?.[currentPieceIndex];
       if (p) {
@@ -904,88 +486,40 @@ export default function TestPage() {
           const selected = answers[q.id];
           const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
           const pointsAwarded = isCorrect ? Number(q.points || 1) : 0;
-          rows.push({
-            attempt_id: attemptId,
-            question_id: q.id,
-            question_type: 'reading',
-            selected_choice: selected != null ? String(selected) : null,
-            is_correct: isCorrect,
-            points_awarded: pointsAwarded,
-            answered_at: new Date().toISOString(),
-          });
+          rows.push({ attempt_id: attemptId, question_id: q.id, question_type: 'reading', selected_choice: selected != null ? String(selected) : null, is_correct: isCorrect, points_awarded: pointsAwarded, answered_at: new Date().toISOString() });
         }
-        if (rows.length) {
-          const { error } = await supabase.from('question_attempts').upsert(rows, { onConflict: ['attempt_id', 'question_id'] });
-          if (error) console.error('save prev reading answers error', error);
-        }
+        if (rows.length) { const { error } = await supabase.from('question_attempts').upsert(rows, { onConflict: ['attempt_id', 'question_id'] }); if (error) console.error('save prev reading answers error', error); }
       }
-
       if (currentPieceIndex > 0) setCurrentPieceIndex(i => i - 1);
       return;
     }
-
     if (currentChapter.type === 'grammar') {
       const q = currentChapter.questions?.[currentPieceIndex];
       if (q) {
         const selected = answers[q.id];
         const isCorrect = selected != null ? String(selected).trim() === String(q.answer).trim() : false;
         const pointsAwarded = isCorrect ? Number(q.points || 1) : 0;
-        const row = {
-          attempt_id: attemptId,
-          question_id: q.id,
-          question_type: 'grammar',
-          selected_choice: selected != null ? String(selected) : null,
-          is_correct: isCorrect,
-          points_awarded: pointsAwarded,
-          answered_at: new Date().toISOString(),
-        };
+        const row = { attempt_id: attemptId, question_id: q.id, question_type: 'grammar', selected_choice: selected != null ? String(selected) : null, is_correct: isCorrect, points_awarded: pointsAwarded, answered_at: new Date().toISOString() };
         const { error } = await supabase.from('question_attempts').upsert([row], { onConflict: ['attempt_id', 'question_id'] });
         if (error) console.error('save prev grammar question error', error);
       }
-
       if (currentPieceIndex > 0) setCurrentPieceIndex(i => i - 1);
     }
   };
 
-  // Hint modal helpers
-  const openHintModal = (questionId) => {
-    setHintModalQuestionId(questionId);
-    setHintModalOpen(true);
-  };
-
-  const closeHintModal = () => {
-    setHintModalOpen(false);
-    setHintModalQuestionId(null);
-  };
-
-  const revealHint = (questionId) => {
-    setRevealedHintMap(prev => ({ ...prev, [questionId]: true }));
-  };
-
-  const revealAnswer = (questionId) => {
-    setRevealedAnswerMap(prev => ({ ...prev, [questionId]: true }));
-  };
-
-  if (loading) return (
-    <div className="p-6">جاري تحميل الاختبار...</div>
-  );
+  if (loading) return <div className="p-6">جاري تحميل الاختبار...</div>;
 
   if (showResult) {
-    // عند نهاية الاختبار، هنا يمكن عرض ملخص الأخطاء والأسئلة الخاطئة
     return (
       <div className="p-6">
         <h1 className="text-2xl font-bold mb-4">{test?.title}</h1>
         <h2 className="text-lg mb-2">اكتمل الاختبار</h2>
         <div className="mb-4">النتيجة: {resultSummary ? `${resultSummary.percentage}%` : '—'}</div>
         <div className="mb-4">النقاط المحققة: {resultSummary ? resultSummary.totalAwarded : '—'} من {resultSummary ? resultSummary.totalPossible : totalPossible}</div>
-
-        {/* عرض أسئلة خاطئة: يمكن جلبها من question_attempts أو من الذاكرة المحلية */}
         <div className="mt-6">
           <h3 className="font-semibold mb-2">الأسئلة الخاطئة</h3>
-          {/* يمكنك استبدال هذا الجزء بمنطق يعرض الأسئلة الخاطئة فعليًا من قاعدة البيانات */}
           <div className="text-sm text-slate-600">سيتم عرض الأسئلة الخاطئة هنا لمراجعتك.</div>
         </div>
-
         <div className="mt-6">
           <Button onClick={() => router.push('/dashboard')} variant="outline">الرئيسية</Button>
         </div>
@@ -995,11 +529,9 @@ export default function TestPage() {
 
   return (
     <div className="p-6">
-      {/* Alert Banner */}
       <AlertBanner alert={currentAlert} onClose={closeAlert} />
 
       <h2 className="text-xl font-bold mb-4">{test?.title}</h2>
-
       <h3 className="text-lg mb-2">{currentChapter?.title}</h3>
 
       <div className="mb-4 flex items-center justify-between">
@@ -1017,45 +549,25 @@ export default function TestPage() {
       {currentChapter?.type === 'listening' && currentPiece && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white rounded-lg p-6 shadow-sm max-h-[70vh] overflow-y-auto text-left relative">
-            <div className="mb-4">
-              {/* عنصر الصوت مخفي بدون controls لمنع تحكم المستخدم */}
-              <audio
-                ref={audioRef}
-                preload="auto"
-                className="hidden"
-              />
+            <audio ref={audioRef} preload="auto" className="hidden" />
 
-              {/* عرض رسالة العد التنازلي قبل ظهور زر التشغيل */}
-              {playCountdown != null && playCountdown > 0 && (
-                <div className="mt-3 p-3 bg-blue-50 border border-blue-100 rounded text-sm text-blue-700">
-                  You have <span className="font-semibold">{playCountdown}</span> seconds to read the questions before the audio button appears.
-                </div>
-              )}
+            {playCountdown != null && playCountdown > 0 && (
+              <div className="mt-3 p-3 bg-blue-50 border border-blue-100 rounded text-sm text-blue-700">
+                You have <span className="font-semibold">{playCountdown}</span> seconds to read the questions before the audio button appears.
+              </div>
+            )}
 
-              {/* زر التشغيل الصغير داخل مستطيل — يظهر بعد انتهاء العد */}
-              {showPlayButton && !playedMapRef.current[currentPiece.id] && (
-                <div className="mt-4 flex justify-center">
-                  <button
-                    onClick={handlePlayAudioNow}
-                    className="flex items-center gap-2 px-3 py-2 border rounded-md bg-white shadow-sm text-sm text-slate-700"
-                    aria-label="Play audio"
-                  >
-                    <Volume2 className="w-4 h-4" />
-                    <span>Play Audio</span>
-                  </button>
-                </div>
-              )}
+            {showPlayButton && !playedMapRef.current[currentPiece.id] && (
+              <div className="mt-4 flex justify-center">
+                <button onClick={handlePlayAudioNow} className="flex items-center gap-2 px-3 py-2 border rounded-md bg-white shadow-sm text-sm text-slate-700" aria-label="Play audio">
+                  <Volume2 className="w-4 h-4" />
+                  <span>Play Audio</span>
+                </button>
+              </div>
+            )}
 
-              {!isPlaying && !showPlayButton && playCountdown == null && (
-                <div className="mt-3">
-                  <div className="text-sm text-slate-500 mt-2">المقطع سيصبح قابلاً للتشغيل بعد انتهاء العد. اضغط زر Play عندما يظهر.</div>
-                </div>
-              )}
-
-              {isPlaying && (
-                <div className="mt-3 p-2 text-sm text-green-700">Audio is playing...</div>
-              )}
-            </div>
+            {isPlaying && <div className="mt-3 p-2 text-sm text-green-700">Audio is playing...</div>}
+            {!isPlaying && !showPlayButton && playCountdown == null && <div className="mt-3 text-sm text-slate-500">المقطع سيصبح قابلاً للتشغيل بعد انتهاء العد.</div>}
           </div>
 
           <div>
@@ -1079,7 +591,6 @@ export default function TestPage() {
                     <p className="text-lg font-medium"><span className="text-blue-600 mr-2 font-semibold">{i + 1}.</span>{q.question_text}</p>
                     <button type="button" onClick={() => toggleMark(q.id)} title="علامة للرجوع" className="text-yellow-600 ml-3"><Tag className={`w-4 h-4 ${markedMap[q.id] ? 'text-yellow-600' : 'text-slate-300'}`} /></button>
                   </div>
-
                   <div>
                     <Button onClick={() => openHintModal(q.id)} variant="outline" size="sm">Hint</Button>
                   </div>
@@ -1094,34 +605,17 @@ export default function TestPage() {
                     </label>
                   ))}
                 </div>
-
-                {revealedHintMap[q.id] && (
-                  <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded">
-                    <div className="text-sm text-yellow-800">Hint: {q.hint}</div>
-                  </div>
-                )}
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Reading */}
+      {/* Reading & Grammar (unchanged rendering) */}
       {currentChapter?.type === 'reading' && currentPiece && (
         <div className="bg-white rounded-lg p-6 shadow-sm mb-6">
-          {currentPiece.image_url && (
-            <div className="mb-4">
-              <img src={currentPiece.image_url} alt={currentPiece.passage_title || 'passage image'} className="max-w-full h-auto rounded" />
-            </div>
-          )}
-          {currentPiece.passage_paragraphs ? (
-            currentPiece.passage_paragraphs.map(pp => (
-              <p key={pp.num} className="mb-3 text-justify">{pp.text}</p>
-            ))
-          ) : (
-            <p className="mb-3 text-justify">{currentPiece.passage}</p>
-          )}
-
+          {currentPiece.image_url && <div className="mb-4"><img src={currentPiece.image_url} alt={currentPiece.passage_title || 'passage image'} className="max-w-full h-auto rounded" /></div>}
+          {currentPiece.passage_paragraphs ? currentPiece.passage_paragraphs.map(pp => <p key={pp.num} className="mb-3 text-justify">{pp.text}</p>) : <p className="mb-3 text-justify">{currentPiece.passage}</p>}
           <div className="mt-4">
             {currentPiece.reading_questions?.map((q, i) => (
               <div key={q.id} id={`q-${q.id}`} className="bg-white rounded-lg p-4 shadow-sm mb-3">
@@ -1144,7 +638,6 @@ export default function TestPage() {
         </div>
       )}
 
-      {/* Grammar */}
       {currentChapter?.type === 'grammar' && (
         <div className="space-y-4">
           {currentChapter.questions?.map((q, i) => (
@@ -1168,15 +661,16 @@ export default function TestPage() {
       )}
 
       <div className="mt-6 flex items-center gap-3">
-        {/* استعادة تصميم زر الرجوع كما كان في الكود الأصلي */}
         <Button onClick={handlePrev} variant="outline"><ArrowLeft className="w-4 h-4 mr-2" /> السابق</Button>
-        {/* استعادة تصميم زر التالي كما كان في الكود الأصلي */}
         <Button onClick={handleNext}>التالي <ChevronRight className="w-4 h-4 ml-2" /></Button>
-        <div className="ml-auto">
-          {/* زر مراجعة المحاولة تمت إزالته من صفحة الاختبار كما طلبت.
-              المراجعة ستظهر فقط في نهاية الاختبار (showResult) مع عرض الأسئلة الخاطئة */}
-        </div>
       </div>
     </div>
   );
+}
+
+// small helper
+function formatMMSS(secs) {
+  const m = Math.floor((secs || 0) / 60);
+  const s = Math.floor((secs || 0) % 60);
+  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
